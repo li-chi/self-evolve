@@ -1,0 +1,623 @@
+{
+  "_comment": "Bundle config for the four Tier-B media/browse servers (youtube, youtube-transcript, context7, playwright_with_chunk). One replay-proxy process loads all four so a single docker container can satisfy any media-bundle task.",
+  "servers": [
+    {
+      "name": "youtube",
+      "cassette": "/Users/chili/Projects/mcp-env/mcp_servers/replay-proxy/cassettes/youtube.jsonl",
+      "tools": [
+        {
+          "name": "videos_getVideo",
+          "description": "Get detailed information about a YouTube video (YouTube Data API v3 videos.list).",
+          "params": {
+            "videoId": {
+              "type": "string",
+              "required": true
+            },
+            "parts": {
+              "type": "array",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "videos_searchVideos",
+          "description": "Search for videos on YouTube (search.list + videos.list detail join).",
+          "params": {
+            "query": {
+              "type": "string",
+              "required": true
+            },
+            "maxResults": {
+              "type": "number",
+              "required": false,
+              "default": 10
+            }
+          }
+        },
+        {
+          "name": "transcripts_getTranscript",
+          "description": "Get the transcript of a YouTube video via the youtube-transcript npm package.",
+          "params": {
+            "videoId": {
+              "type": "string",
+              "required": true
+            },
+            "language": {
+              "type": "string",
+              "required": false,
+              "default": "en"
+            }
+          }
+        },
+        {
+          "name": "channels_getChannel",
+          "description": "Get information about a YouTube channel (channels.list).",
+          "params": {
+            "channelId": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "channels_listVideos",
+          "description": "Start a new channel videos list session with sorting options (max 20 per page).",
+          "params": {
+            "channelId": {
+              "type": "string",
+              "required": true
+            },
+            "maxResults": {
+              "type": "number",
+              "required": false
+            },
+            "sortOrder": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "channels_navigateList",
+          "description": "Navigate within an existing channel-videos list session (prev/next/jump to page).",
+          "params": {
+            "listId": {
+              "type": "string",
+              "required": true
+            },
+            "page": {
+              "type": "integer",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "playlists_getPlaylist",
+          "description": "Get information about a YouTube playlist (playlists.list).",
+          "params": {
+            "playlistId": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "playlists_getPlaylistItems",
+          "description": "Get videos in a YouTube playlist (playlistItems.list).",
+          "params": {
+            "playlistId": {
+              "type": "string",
+              "required": true
+            },
+            "maxResults": {
+              "type": "number",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "playlists_searchPlaylists",
+          "description": "Search for playlists on YouTube (search.list with type=playlist).",
+          "params": {
+            "query": {
+              "type": "string",
+              "required": true
+            },
+            "maxResults": {
+              "type": "number",
+              "required": false
+            }
+          }
+        }
+      ],
+      "loose_args_match": true
+    },
+    {
+      "name": "youtube-transcript",
+      "cassette": "/Users/chili/Projects/mcp-env/mcp_servers/replay-proxy/cassettes/youtube-transcript.jsonl",
+      "tools": [
+        {
+          "name": "get_transcript",
+          "description": "Retrieves the transcript of a YouTube video as a single concatenated string. Returns {title, transcript, next_cursor}.",
+          "params": {
+            "url": {
+              "type": "string",
+              "required": true
+            },
+            "lang": {
+              "type": "string",
+              "required": false,
+              "default": "en"
+            },
+            "next_cursor": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "get_timed_transcript",
+          "description": "Retrieves the transcript with per-snippet timestamps. Returns {title, snippets:[{text,start,duration}], next_cursor}.",
+          "params": {
+            "url": {
+              "type": "string",
+              "required": true
+            },
+            "lang": {
+              "type": "string",
+              "required": false,
+              "default": "en"
+            },
+            "next_cursor": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "get_video_info",
+          "description": "Retrieves video metadata via yt-dlp. Returns {title, description, uploader, upload_date, duration}.",
+          "params": {
+            "url": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "get_available_languages",
+          "description": "Lists available transcript languages for the video. Returns a list of language codes / labels.",
+          "params": {
+            "url": {
+              "type": "string",
+              "required": true
+            }
+          }
+        }
+      ],
+      "loose_args_match": true
+    },
+    {
+      "name": "context7",
+      "cassette": "/Users/chili/Projects/mcp-env/mcp_servers/replay-proxy/cassettes/context7.jsonl",
+      "tools": [
+        {
+          "name": "resolve-library-id",
+          "description": "Resolves a package/product name to a Context7-compatible library ID and returns matching libraries (format /org/project). Schema pinned to @upstash/context7-mcp@1.0.14.",
+          "params": {
+            "libraryName": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "get-library-docs",
+          "description": "Fetches documentation and code examples for a resolved Context7-compatible library ID. Response is a markdown text payload from the Context7 docs API.",
+          "params": {
+            "context7CompatibleLibraryID": {
+              "type": "string",
+              "required": true
+            },
+            "topic": {
+              "type": "string",
+              "required": false
+            },
+            "tokens": {
+              "type": "integer",
+              "required": false,
+              "default": 10000
+            }
+          }
+        }
+      ],
+      "loose_args_match": true
+    },
+    {
+      "name": "playwright_with_chunk",
+      "cassette": "/Users/chili/Projects/mcp-env/mcp_servers/replay-proxy/cassettes/playwright_with_chunk.jsonl",
+      "tools": [
+        {
+          "name": "browser_navigate",
+          "description": "Navigate to a URL. Returns markdown with Ran Playwright code + accessibility snapshot first span.",
+          "params": {
+            "url": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_navigate_back",
+          "description": "Go back to the previous page.",
+          "params": {}
+        },
+        {
+          "name": "browser_navigate_forward",
+          "description": "Go forward to the next page.",
+          "params": {}
+        },
+        {
+          "name": "browser_snapshot",
+          "description": "Capture accessibility snapshot. Sliced into spans (--span-size, 5000 chars in Toolathlon); first span returned.",
+          "params": {}
+        },
+        {
+          "name": "browser_snapshot_navigate_to_span",
+          "description": "Navigate to a specific span (0-based) of the latest snapshot.",
+          "params": {
+            "spanIndex": {
+              "type": "integer",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_snapshot_navigate_to_first_span",
+          "description": "Navigate to first snapshot span.",
+          "params": {}
+        },
+        {
+          "name": "browser_snapshot_navigate_to_last_span",
+          "description": "Navigate to last snapshot span.",
+          "params": {}
+        },
+        {
+          "name": "browser_snapshot_navigate_to_next_span",
+          "description": "Navigate to next snapshot span.",
+          "params": {}
+        },
+        {
+          "name": "browser_snapshot_navigate_to_prev_span",
+          "description": "Navigate to previous snapshot span.",
+          "params": {}
+        },
+        {
+          "name": "browser_snapshot_navigate_to_line",
+          "description": "Navigate to a specific global line number (1-based) of the snapshot.",
+          "params": {
+            "globalLineNumber": {
+              "type": "integer",
+              "required": true
+            },
+            "contextLines": {
+              "type": "integer",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_snapshot_search",
+          "description": "Regex search across all spans of the current snapshot.",
+          "params": {
+            "pattern": {
+              "type": "string",
+              "required": true
+            },
+            "flags": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_click",
+          "description": "Perform click on a web page using ref from snapshot.",
+          "params": {
+            "element": {
+              "type": "string",
+              "required": true
+            },
+            "ref": {
+              "type": "string",
+              "required": true
+            },
+            "doubleClick": {
+              "type": "boolean",
+              "required": false
+            },
+            "button": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_hover",
+          "description": "Hover over an element.",
+          "params": {
+            "element": {
+              "type": "string",
+              "required": true
+            },
+            "ref": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_drag",
+          "description": "Drag-and-drop between two elements.",
+          "params": {
+            "startElement": {
+              "type": "string",
+              "required": true
+            },
+            "startRef": {
+              "type": "string",
+              "required": true
+            },
+            "endElement": {
+              "type": "string",
+              "required": true
+            },
+            "endRef": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_type",
+          "description": "Type text into an editable element.",
+          "params": {
+            "element": {
+              "type": "string",
+              "required": true
+            },
+            "ref": {
+              "type": "string",
+              "required": true
+            },
+            "text": {
+              "type": "string",
+              "required": true
+            },
+            "submit": {
+              "type": "boolean",
+              "required": false
+            },
+            "slowly": {
+              "type": "boolean",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_select_option",
+          "description": "Select option(s) from a dropdown.",
+          "params": {
+            "element": {
+              "type": "string",
+              "required": true
+            },
+            "ref": {
+              "type": "string",
+              "required": true
+            },
+            "values": {
+              "type": "array",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_press_key",
+          "description": "Press a keyboard key.",
+          "params": {
+            "key": {
+              "type": "string",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_wait_for",
+          "description": "Wait for time / text-appear / text-disappear.",
+          "params": {
+            "time": {
+              "type": "number",
+              "required": false
+            },
+            "text": {
+              "type": "string",
+              "required": false
+            },
+            "textGone": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_evaluate",
+          "description": "Evaluate JS in the page or against an element.",
+          "params": {
+            "function": {
+              "type": "string",
+              "required": true
+            },
+            "element": {
+              "type": "string",
+              "required": false
+            },
+            "ref": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_take_screenshot",
+          "description": "Take a screenshot of viewport / element / full page.",
+          "params": {
+            "raw": {
+              "type": "boolean",
+              "required": false
+            },
+            "filename": {
+              "type": "string",
+              "required": false
+            },
+            "element": {
+              "type": "string",
+              "required": false
+            },
+            "ref": {
+              "type": "string",
+              "required": false
+            },
+            "fullPage": {
+              "type": "boolean",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_file_upload",
+          "description": "Upload files (absolute paths).",
+          "params": {
+            "paths": {
+              "type": "array",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_handle_dialog",
+          "description": "Accept or dismiss the most recent dialog.",
+          "params": {
+            "accept": {
+              "type": "boolean",
+              "required": true
+            },
+            "promptText": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_console_messages",
+          "description": "Return collected console messages.",
+          "params": {}
+        },
+        {
+          "name": "browser_network_requests",
+          "description": "Return collected network requests.",
+          "params": {}
+        },
+        {
+          "name": "browser_resize",
+          "description": "Resize the browser viewport.",
+          "params": {
+            "width": {
+              "type": "number",
+              "required": true
+            },
+            "height": {
+              "type": "number",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_close",
+          "description": "Close the browser context/page.",
+          "params": {}
+        },
+        {
+          "name": "browser_install",
+          "description": "Install browser binaries.",
+          "params": {}
+        },
+        {
+          "name": "browser_scroll_up",
+          "description": "Scroll up by amount px (default one viewport).",
+          "params": {
+            "amount": {
+              "type": "number",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_scroll_down",
+          "description": "Scroll down by amount px (default one viewport).",
+          "params": {
+            "amount": {
+              "type": "number",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_scroll_to_top",
+          "description": "Scroll to top.",
+          "params": {}
+        },
+        {
+          "name": "browser_scroll_to_bottom",
+          "description": "Scroll to bottom.",
+          "params": {}
+        },
+        {
+          "name": "browser_tab_list",
+          "description": "List all open tabs.",
+          "params": {}
+        },
+        {
+          "name": "browser_tab_new",
+          "description": "Open a new tab, optionally navigating.",
+          "params": {
+            "url": {
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "name": "browser_tab_select",
+          "description": "Switch to tab at index.",
+          "params": {
+            "index": {
+              "type": "number",
+              "required": true
+            }
+          }
+        },
+        {
+          "name": "browser_tab_close",
+          "description": "Close tab at index (or current tab).",
+          "params": {
+            "index": {
+              "type": "number",
+              "required": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
