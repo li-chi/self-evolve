@@ -62,3 +62,12 @@ tasks whose graders import Toolathlon's `utils.*` vendor those modules into
 | task | track | oracle | nop |
 |---|---|---|---|
 | privacy-desensitization | local (no external services) | 1.0 | 0.0 |
+
+## Baseline results
+
+| model | agent | task | reward | notes |
+|---|---|---|---|---|
+| qwen3.6-35b (self-hosted SGLang via LiteLLM) | terminus-2 | privacy-desensitization | 0.0 | completed full workflow; 13/22 files had content mismatches (regex coverage misses) |
+
+Model endpoints are configured in `.env` (gitignored); run with
+`--env-file .env -m "openai/<model>"`.
