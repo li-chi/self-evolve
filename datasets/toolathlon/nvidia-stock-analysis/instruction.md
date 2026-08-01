@@ -1,0 +1,3 @@
+Your workspace directory is `/app`. When a relative path is mentioned, resolve it against this workspace directory.
+
+Please help me analyze the ownership and market trends of NVIDIA (NVDA). In the current workspace, there is an Excel template provided named "results_template.xlsx". Please populate this template with the required data. The specific data requirements can be found in data.txt, and the formatting requirements are in tips.txt. After completion, **please rename the file to "results.xlsx"**.

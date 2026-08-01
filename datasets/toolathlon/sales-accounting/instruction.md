@@ -1,0 +1,3 @@
+Your workspace directory is `/app`. When a relative path is mentioned, resolve it against this workspace directory.
+
+Today is January 18, 2024. Please only add the transaction records I have told you in your memory from exactly last week and the week before last to my account book, and do not include any transactions from this week.

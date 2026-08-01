@@ -50,6 +50,12 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+# BigQuery-dialect compatibility for the SQLite backend (float division,
+# COUNTIF, EXTRACT, SAFE_DIVIDE, ...). Vendored copy shared with the
+# gcp-sdk-shim used by task preprocess/graders — edit both together.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import bq_sqlite
+
 
 # ---------------------------------------------------------------------------
 # Configuration (populated from argv at startup)
@@ -186,6 +192,7 @@ def _record(state: dict, op: str, **kwargs) -> None:
 def _db() -> sqlite3.Connection:
     conn = sqlite3.connect(_db_path())
     conn.row_factory = sqlite3.Row
+    bq_sqlite.register_functions(conn)
     return conn
 
 
@@ -270,11 +277,13 @@ def _rewrite_query(query: str, state: dict) -> tuple[str, list[str]]:
     Handles: `proj.ds.tbl`, proj.ds.tbl, `ds.tbl`, ds.tbl.
     """
     referenced: set[str] = set()
+    tables: set = set()
     known = {ds for ds in state["datasets"]}
 
     def _sub_fq(m: re.Match) -> str:
         ds, tbl = m.group("ds"), m.group("tbl")
         referenced.add(ds)
+        tables.add((ds, tbl))
         return f'"{_sqlite_table_name(ds, tbl)}"'
 
     q = _FQ_TABLE_RE.sub(_sub_fq, query)
@@ -284,11 +293,22 @@ def _rewrite_query(query: str, state: dict) -> tuple[str, list[str]]:
         ds, tbl = m.group("ds"), m.group("tbl")
         if ds in known:
             referenced.add(ds)
+            tables.add((ds, tbl))
             return f'"{_sqlite_table_name(ds, tbl)}"'
         return m.group(0)
 
     q = _BARE_DS_TABLE_RE.sub(_sub_bare, q)
-    return q, sorted(referenced)
+    # BigQuery dialect -> SQLite; keeps mock query results identical to
+    # what real BigQuery returns for the SQL agents actually write.
+    record_cols = set()
+    for ds_id, tbl_id in tables:
+        tbl = (state.get("datasets", {}).get(ds_id, {})
+               .get("tables", {}).get(tbl_id, {}))
+        for field in tbl.get("schema", []):
+            if (field.get("type") or "").upper() in ("RECORD", "STRUCT"):
+                record_cols.add(field["name"])
+    q = bq_sqlite.rewrite_struct_access(q, record_cols)
+    return bq_sqlite.prepare_query(q), sorted(referenced), sorted(tables)
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +334,7 @@ def bigquery_run_query(query: str, dry_run: bool = False,
     """
     with _lock():
         s = _load_state()
-        rewritten, referenced = _rewrite_query(query, s)
+        rewritten, referenced, ref_tables = _rewrite_query(query, s)
         for ds in referenced:
             if not validate_dataset_access(ds):
                 _record(s, "bigquery_run_query", query=query,
@@ -337,6 +357,12 @@ def bigquery_run_query(query: str, dry_run: bool = False,
             cur = conn.execute(rewritten)
             rows = cur.fetchall()
             col_names = [d[0] for d in cur.description] if cur.description else []
+            if bq_sqlite.is_write_statement(rewritten):
+                # DDL/DML: BigQuery would register the new/changed table, so
+                # reconcile the catalog with what SQLite now holds.
+                conn.commit()
+                bq_sqlite.sync_catalog(conn, s, ref_tables,
+                                       _sqlite_table_name, _now)
         except sqlite3.Error as e:
             conn.close()
             _record(s, "bigquery_run_query", query=query, error=str(e))
@@ -478,7 +504,8 @@ def bigquery_load_csv_data(dataset_id: str, table_id: str,
         s = _load_state()
         if dataset_id not in s["datasets"]:
             return f"Error loading CSV data to BigQuery: 404 Not Found: dataset {dataset_id}"
-        with open(csv_file_path, "r", encoding="utf-8") as f:
+        # utf-8-sig: real BigQuery strips a leading UTF-8 BOM from the header
+        with open(csv_file_path, "r", encoding="utf-8-sig") as f:
             reader = _csv.reader(f)
             try:
                 header = next(reader) if skip_header else None

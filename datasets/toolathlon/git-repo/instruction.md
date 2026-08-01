@@ -1,0 +1,3 @@
+Your workspace directory is `/app`. When a relative path is mentioned, resolve it against this workspace directory.
+
+I'm trying to reproduce the experiments from a deep learning paper (paper.pdf). Unfortunately, the paper does not provide an official implementation code repository. To work more efficiently, please help me find the unofficial implementation repository with the most stars on GitHub and update the existing `result.json` with the information.

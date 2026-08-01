@@ -1,0 +1,93 @@
+# Fidelity contract: identical initial environment to official Toolathlon.
+# Base = the official task image (ubuntu 22.04 + uv + node + MCP servers +
+# kubectl/kind/helm + playwright chromium), exactly what upstream agents get.
+#
+# v3 adds the hermetic mock track on top of v2:
+#   /opt/mocks/<service>-mock/   mock MCP servers (same tool surface as the
+#                                real servers Toolathlon wires up)
+#   /usr/local/bin/mcp-tool      shell bridge to those servers, so shell-only
+#                                agents see the same tool names + schemas
+#   /opt/sdk-shims/<service>/    client-library shims backed by the SAME mock
+#                                state, so upstream preprocess and upstream
+#                                graders run VERBATIM against the mock
+FROM lockon0927/toolathlon-task-image:1016beta
+
+# Vendored Toolathlon harness (utils/, configs/, pyproject.toml, uv.lock).
+# Graders and preprocess run under the EXACT pinned dependency set via
+# `uv run` from /opt/toolathlon, mirroring upstream's
+# `uv run -m tasks.finalpool.<task>.{preprocess,evaluation}.main`.
+COPY toolathlon/ /opt/toolathlon/
+RUN cd /opt/toolathlon && uv sync --no-dev --no-install-project 2>&1 | tail -2
+
+# Mock MCP servers + the shell bridge. They run under the harness venv,
+# which already pins mcp>=1.9.0 — no extra dependency resolution.
+COPY mocks/ /opt/mocks/
+COPY mcp-bridge/mcp_tool.py /opt/harbor-mcp/mcp_tool.py
+COPY mcp-bridge/render_servers.py /opt/harbor-mcp/render_servers.py
+RUN printf '#!/bin/sh\nexec /opt/toolathlon/.venv/bin/python /opt/harbor-mcp/mcp_tool.py "$@"\n' \
+      > /usr/local/bin/mcp-tool \
+ && chmod +x /usr/local/bin/mcp-tool \
+ && mkdir -p /opt/harbor-mcp /var/lib/mock-state
+
+# Mock service-account key. Upstream preprocess/graders read
+# configs/gcp-service_account.keys.json to pick up the project id and build
+# credentials; the mock ignores the credentials, but the file must parse.
+RUN printf '%s\n' '{' \
+  '  "type": "service_account",' \
+  '  "project_id": "mcp-bench0606",' \
+  '  "private_key_id": "mock-key-id",' \
+  '  "private_key": "-----BEGIN PRIVATE KEY-----\nMOCK\n-----END PRIVATE KEY-----\n",' \
+  '  "client_email": "mock@mcp-bench0606.iam.gserviceaccount.com",' \
+  '  "client_id": "000000000000000000000",' \
+  '  "auth_uri": "https://accounts.google.com/o/oauth2/auth",' \
+  '  "token_uri": "https://oauth2.googleapis.com/token"' \
+  '}' > /opt/toolathlon/configs/gcp-service_account.keys.json
+
+# Upstream's real emails MCP server, in its own venv so the pinned harness
+# environment is untouched. The agent therefore drives the genuine server;
+# only the mail backend behind it is substituted (mocks/poste-mock).
+RUN uv venv /opt/emails-mcp-venv \
+ && VIRTUAL_ENV=/opt/emails-mcp-venv uv pip install \
+      "emails-mcp @ git+https://github.com/lockon-n/emails-mcp" 2>&1 | tail -2 \
+ && /opt/emails-mcp-venv/bin/emails-mcp --help > /dev/null 2>&1 || true
+
+# Mock Google OAuth user credentials. `utils.app_specific.googlesheet`
+# builds Sheets/Drive clients from configs/google_credentials.json; the
+# token refresh goes to the local oauth router, so the values are
+# placeholders that only have to parse.
+RUN printf '%s\n' '{' \
+  '  "token": "mock-access-token",' \
+  '  "refresh_token": "mock-refresh-token",' \
+  '  "token_uri": "https://oauth2.googleapis.com/token",' \
+  '  "client_id": "mock-client-id.apps.googleusercontent.com",' \
+  '  "client_secret": "mock-client-secret",' \
+  '  "scopes": ["https://www.googleapis.com/auth/drive",' \
+  '             "https://www.googleapis.com/auth/spreadsheets",' \
+  '             "https://www.googleapis.com/auth/forms",' \
+  '             "https://www.googleapis.com/auth/calendar"],' \
+  '  "universe_domain": "googleapis.com",' \
+  '  "account": "",' \
+  '  "expiry": "2099-01-01T00:00:00Z"' \
+  '}' > /opt/toolathlon/configs/google_credentials.json
+
+# Client-library shims (google.cloud.* today) — put on PYTHONPATH by the
+# per-task init.sh / test.sh, never globally, so non-mock tasks are untouched.
+COPY sdk-shims/ /opt/sdk-shims/
+
+# Runtime init contract (used by per-task entrypoints):
+#   /opt/harbor-init/init.sh  <task-name>  (generated per task)
+# writes /var/run/toolathlon/launch_time and /var/run/toolathlon/ready.
+RUN mkdir -p /var/run/toolathlon /opt/harbor-init
+
+# Smoke tests: grader imports resolve, and the shim shadows the real SDK.
+RUN cd /opt/toolathlon && uv run python -c "import utils.general.helper; import utils.mcp.tool_servers; print('utils imports OK under uv env')"
+RUN cd /opt/toolathlon && \
+    PYTHONPATH=/opt/sdk-shims/gcp GCP_MOCK_STATE_DIR=/tmp/gcp-smoke uv run python -c "\
+from google.cloud import bigquery, storage; \
+from google.cloud import logging as gl; \
+from google.cloud.logging_v2.services.config_service_v2 import ConfigServiceV2Client; \
+from google.oauth2 import service_account; \
+assert 'sdk-shims' in bigquery.__file__, bigquery.__file__; \
+assert 'sdk-shims' in storage.__file__, storage.__file__; \
+assert 'sdk-shims' in gl.__file__, gl.__file__; \
+print('gcp sdk shim shadows the real client libraries OK')"

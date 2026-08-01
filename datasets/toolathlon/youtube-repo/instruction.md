@@ -1,0 +1,3 @@
+Your workspace directory is `/app`. When a relative path is mentioned, resolve it against this workspace directory.
+
+Please read the video list at https://www.youtube.com/playlist?list=PLyzTA8cetPdHtlGw1X8Kt7Ea4bd27ApR7 to find all technical videos related to machine learning, identify the relevant technologies, and locate the original GitHub repositories for the technologies involved. Then, write the technology project, GitHub repository URL, and main functions into `ml_tech.md` in the workspace.

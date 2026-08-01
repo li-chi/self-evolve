@@ -1,0 +1,23 @@
+Your workspace directory is `/app`. When a relative path is mentioned, resolve it against this workspace directory.
+
+The academic affairs system requires an automated academic warning mechanism. The latest unit test scores are recorded in the `latest_quiz_scores.csv` file. Please read this file and combine it with all the student scores stored in multiple test score tables (such as 2501, 2502, 2503, 2504, 2505, 2506, and 2507) in the `academic_warning` dataset of BigQuery to identify those students whose test scores have dropped by more than 25% compared to their average scores in the past. Write the list to the  `bad_student.csv`. For those students whose test scores have dropped by more than 45%, please immediately write a critical level warning log to the existing log bucket whose name is prefixed with `exam_log` for each of them with his/her name and student ID so that the system can automatically notify their counselor. During the entire process, there is no need to consider any log entries in the log bucket that existed before the task was executed.
+
+## Available service tools
+
+This environment provides the following service(s) as MCP tool servers:
+- `google-cloud`
+
+Call them with `mcp-tool` (tool names and arguments are exactly the
+service's own):
+
+```bash
+mcp-tool tools google-cloud                 # list tools with one-line summaries
+mcp-tool schema google-cloud <tool_name>    # full argument schema for one tool
+mcp-tool call google-cloud <tool_name> '<json-object-of-arguments>'
+```
+
+For example:
+
+```bash
+mcp-tool call google-cloud bigquery_run_query '{"query": "SELECT * FROM `dataset.table` LIMIT 5"}'
+```
