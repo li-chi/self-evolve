@@ -31,7 +31,6 @@ dropped or rewrote something. `replay.reconstruct` rebuilds full histories.
 
 from __future__ import annotations
 
-import dataclasses
 import functools
 import hashlib
 import json
@@ -157,8 +156,19 @@ def _ledger_path(s: dict[str, Any]) -> Path:
 
 
 def _write(s: dict[str, Any], record: dict[str, Any]) -> None:
-    with _ledger_path(s).open("a") as f:
-        f.write(json.dumps(record, default=str) + "\n")
+    """Append one record. Never raises: losing a log line must not kill a trial.
+
+    The `log` arm is the control the whole experiment is measured against, so
+    the hook has to be at least as reliable as plain Harbor. A full disk or an
+    unencodable value costs us a ledger line, not a rollout.
+    """
+    try:
+        with _ledger_path(s).open("a") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+    except Exception as e:  # noqa: BLE001 - deliberately swallowing everything
+        if not s.get("write_failed"):
+            s["write_failed"] = True
+            print(f"[evolve] ledger write failed for {s['key']}: {e!r}")
 
 
 def _usage(r: LLMResponse) -> dict[str, Any] | None:
@@ -173,19 +183,20 @@ def _usage(r: LLMResponse) -> dict[str, Any] | None:
     }
 
 
-def _normalize(r: LLMResponse) -> LLMResponse:
-    """Apply the `parse` arm: do server-side reasoning splitting, client-side.
+def _reasoning_leaked(r: LLMResponse) -> bool:
+    """True if the server is emitting chain-of-thought inside `content`.
 
-    Harbor stores `r.content` verbatim in the history and runs its parser over
-    it, so splitting here both cleans the history and removes the format
-    warning at source.
+    Qwen3.6's chat template prefills the opening `<think>`, so a completion
+    carries a closing `</think>` with no opener. With SGLang launched
+    `--reasoning-parser qwen3` that prefix arrives as `reasoning_content` and
+    `content` is clean; without it, Harbor stores the reasoning in the history
+    and re-sends it every turn (~10% of prefill) while warning the model about
+    "Extra text detected before JSON object" on most turns.
+
+    Detected and flagged, deliberately not repaired: a silent client-side fix
+    would hide a misconfigured server for a whole run.
     """
-    if "parse" not in ARM or r.reasoning_content is not None:
-        return r
-    content, reasoning = policy.split_reasoning(r.content)
-    if content == r.content and reasoning is None:
-        return r
-    return dataclasses.replace(r, content=content, reasoning_content=reasoning)
+    return r.reasoning_content is None and "</think>" in (r.content or "")
 
 
 def install() -> None:
@@ -244,24 +255,23 @@ def install() -> None:
         note = policy.build_note(s, messages) if "cards" in ARM else None
         sent = f"{prompt}\n\n{note}" if note else prompt
 
-        # History we send may differ from the history Harbor keeps; the delta
-        # chain above is deliberately computed on Harbor's version.
-        history = message_history
-        stripped = 0
-        if "strip" in ARM:
-            history, stripped = policy.strip_reasoning(message_history)
-
         t0 = time.time()
-        r = _normalize(await orig_call(self, sent, history, **kw))
+        r = await orig_call(self, sent, message_history, **kw)
         latency = time.time() - t0
+
+        leaked = _reasoning_leaked(r)
+        if leaked and not s.get("leak_warned"):
+            s["leak_warned"] = True
+            print(
+                f"[evolve] {s['task']}: reasoning is arriving inside content — "
+                "SGLang is missing --reasoning-parser qwen3"
+            )
 
         # ---- extra compute: another call on the same endpoint, harness-invisible ----
         audit = None
         if "audit" in ARM and role == "main" and policy.claims_done(r.content):
-            v = _normalize(
-                await orig_call(
-                    self, policy.audit_prompt(messages, r.content), history, **kw
-                )
+            v = await orig_call(
+                self, policy.audit_prompt(messages, r.content), message_history, **kw
             )
             s["extra_calls"] += 1
             audit = {"verdict": v.content, "usage": _usage(v), "applied": False}
@@ -292,7 +302,7 @@ def install() -> None:
                 "compacted": dropped > 0 and role == "main",
                 "new_messages": messages[reused:],
                 "injected": note,
-                "stripped_chars": stripped,
+                "reasoning_leak": leaked,
                 "response": r.content,
                 "reasoning": r.reasoning_content,
                 "usage": _usage(r),

@@ -4,15 +4,15 @@ Everything here is a no-op in the `log` arm. Arms are selected with
 `EVOLVE_ARM`:
 
   log           pass-through + ledger (baseline; must reproduce harbor exactly)
-  parse         split `</think>` out of the response, as SGLang's reasoning
-                parser would; Harbor then stores clean content in history and
-                stops emitting format warnings
-  strip         history-only ablation of `parse`: leave the response alone but
-                drop reasoning from assistant turns we re-send
   cards         `build_note` injects retrieved experience as a prompt suffix
   audit         completion gate: one extra model call before a `task_complete`
 
-Arms compose by substring, e.g. `strip+cards+audit`.
+Arms compose by substring, e.g. `cards+audit`.
+
+`parse` and `strip` arms existed to undo, client-side, a server missing
+`--reasoning-parser qwen3`. Fixed on the server 2026-08-02 and removed; the
+hook now only flags the condition (`_reasoning_leaked`) rather than papering
+over it.
 
 Keep `build_note` a pure function of (session, messages) plus whatever store
 you read — that is what makes `replay.py` able to score it offline against the
@@ -24,73 +24,6 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-
-# --------------------------------------------------------------------------
-# Arms: parse / strip
-# --------------------------------------------------------------------------
-
-# Fixed on the server 2026-08-02 by launching SGLang with
-# `--reasoning-parser qwen3`; `reasoning_content` now arrives separated and
-# these two arms are no-ops. They stay as a safety net for the case where the
-# parser is off again, and to reproduce the pre-fix baseline.
-#
-# Before the fix: the chat template prefills the
-# opening `<think>`, so completions arrive as
-#     <reasoning prose></think>\n\n```json\n{...}\n```
-# with `reasoning_content` unset. Harbor's parser recovers the JSON (it scans
-# for the first balanced brace) but `Chat.chat` appends the *whole* content to
-# the history, so every turn's reasoning is re-sent on every later turn.
-# Measured on a 7-turn rollout: 45% of assistant content, 14.5% of the final
-# prompt, ~8.5% of total billed prefill, growing with turn count.
-#
-# Stripping here is what `--reasoning-parser qwen3` would do server-side. It is
-# applied to the history we send, not to what Harbor stores, and it is
-# deterministic, so the prefix stays stable across turns and the radix cache
-# still hits.
-
-
-_FENCE = re.compile(r"^\s*```(?:json)?\s*\n(.*?)\n\s*```\s*$", re.S)
-
-
-def split_reasoning(content: str) -> tuple[str, str | None]:
-    """Split a completion into (content, reasoning) the way SGLang would.
-
-    Emulates `--reasoning-parser qwen3` at the serving layer: everything up to
-    and including `</think>` is reasoning, the rest is the answer. Also unwraps
-    a surrounding ```json fence — the reasoning parser would leave that in
-    place, and it is the *second* cause of Harbor's "Extra text detected
-    before JSON object" warning (4,710 of them across the current baseline).
-    """
-    reasoning = None
-    end = content.find("</think>")
-    if end != -1:
-        cut = end + len("</think>")
-        reasoning, content = content[:cut], content[cut:]
-    content = content.strip()
-    m = _FENCE.match(content)
-    if m:
-        content = m.group(1)
-    return content, reasoning
-
-
-def strip_reasoning(messages: list[Any]) -> tuple[list[dict[str, Any]], int]:
-    """Return (history with assistant reasoning removed, chars removed)."""
-    out: list[dict[str, Any]] = []
-    removed = 0
-    for m in messages:
-        d = m if isinstance(m, dict) else {
-            "role": getattr(m, "role", "?"), "content": getattr(m, "content", str(m))
-        }
-        content = d.get("content") or ""
-        if d.get("role") == "assistant" and isinstance(content, str):
-            end = content.find("</think>")
-            if end != -1:
-                cut = end + len("</think>")
-                removed += cut
-                d = {**d, "content": content[cut:].lstrip()}
-        out.append(d)
-    return out, removed
-
 
 # --------------------------------------------------------------------------
 # Arm: cards

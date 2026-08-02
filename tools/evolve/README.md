@@ -13,6 +13,7 @@ tools/evolve/
   policy.py   the algorithm under test — build_note / the completion audit
   replay.py   offline loop: iterate on policy.py with no containers, no GPU
   run.py      harbor's CLI with the hook installed
+  selftest.py asserts the `log` arm is a pass-through
 ```
 
 ## Running
@@ -31,6 +32,12 @@ EVOLVE_ARM=log .venv/bin/python -m tools.evolve.run run \
 | `cards` | `policy.build_note` appends retrieved experience to the prompt |
 | `audit` | completion gate: one extra model call before any `task_complete: true` |
 | `cards+audit` | both |
+
+Run `.venv/bin/python -m tools.evolve.selftest` before trusting any arm
+comparison and after touching `hook.py`. It asserts that the `log` arm hands
+the real `LiteLLM.call` the same objects it was given and returns the response
+untouched — an exact check, where a statistical plain-vs-hooked run would only
+resolve a landslide.
 
 `EVOLVE_STORE` (default `jobs/_evolve`) sets the ledger root.
 
@@ -52,6 +59,19 @@ the call came through `Chat.chat` (the only caller that passes
 `previous_response_id`) and `subagent` otherwise.
 
 `replay.reconstruct` rebuilds full message lists from the deltas.
+
+## Reasoning separation
+
+SGLang must be launched with `--reasoning-parser qwen3`. Qwen3.6's chat
+template prefills the opening `<think>`, so completions carry a closing
+`</think>` with no opener; without the parser the reasoning arrives inside
+`content`, Harbor stores it in the history and re-sends it every turn (~10% of
+prefill measured over 25 trials) while warning the model about "Extra text
+detected before JSON object" on most turns. Enabled on the server 2026-08-02.
+
+The hook flags the condition per record (`reasoning_leak`) and warns once per
+session rather than repairing it — a silent client-side fix would hide a
+misconfigured server for a whole run.
 
 ## Two properties worth keeping
 
