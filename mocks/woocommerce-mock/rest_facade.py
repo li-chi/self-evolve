@@ -94,6 +94,8 @@ def _match_filters(item: dict, params: dict) -> bool:
                 return False
         elif key in ("sku", "slug", "status", "type", "stock_status",
                      "customer", "email"):
+            if key == "status" and value.lower() == "any":
+                continue  # WC REST: status=any means no status filter
             if str(item.get(key, "")).lower() != value.lower():
                 return False
         elif key == "category":

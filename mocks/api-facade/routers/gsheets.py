@@ -83,15 +83,21 @@ def handle(method: str, path: str, query: dict, body, headers: dict):
 
     if tail[:1] == ["values"]:
         rng = "/".join(tail[1:])
-        name = rng.split("!")[0] if "!" in rng else None
+        if "!" in rng:
+            name, cells = rng.split("!")[0], rng
+        elif gs._find_sheet(ss, rng):
+            # A1 notation allows a bare sheet name as the whole range
+            name, cells = rng, None
+        else:
+            name, cells = None, rng
         sheet = gs._find_sheet(ss, name) or ss["sheets"][0]
         if method == "GET":
             return 200, {"range": rng, "majorDimension": "ROWS",
-                         "values": _values(sheet, rng)}
+                         "values": _values(sheet, cells)}
         if method in ("PUT", "POST"):
             rows = body.get("values") or []
             r1, c1 = 1, 1
-            cell = rng.split("!")[1] if "!" in rng else rng
+            cell = cells.split("!")[-1] if cells else ""
             cell = cell.split(":")[0]
             if cell and cell[0].isalpha():
                 parsed = gs._split_a1(cell)

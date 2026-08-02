@@ -240,7 +240,7 @@ def woo_products_list(perPage: int = 10, page: int = 1,
                      if q in (i["name"] or "").lower()
                      or q in (i["sku"] or "").lower()
                      or q in (i["description"] or "").lower()]
-        if status:
+        if status and status != "any":
             items = [i for i in items if i["status"] == status]
         if sku:
             items = [i for i in items if i["sku"] == sku]
@@ -545,7 +545,9 @@ def _new_order(state: dict, data: dict) -> dict:
         "payment_method": data.get("payment_method", ""),
         "payment_method_title": data.get("payment_method_title", ""),
         "transaction_id": "",
-        "date_paid": data.get("date_paid"),
+        # WC REST: set_paid=true on create stamps date_paid
+        "date_paid": data.get("date_paid")
+                     or (now if data.get("set_paid") else None),
         "date_completed": data.get("date_completed"),
         "cart_hash": "",
         "meta_data": data.get("meta_data", []),
@@ -572,7 +574,7 @@ def woo_orders_list(perPage: int = 10, page: int = 1,
     with _lock():
         s = _load_state()
         items = list(s["orders"].values())
-        if status:
+        if status and status != "any":
             items = [o for o in items if o["status"] == status]
         if customer is not None:
             items = [o for o in items if o["customer_id"] == customer]

@@ -3,7 +3,7 @@
 Source: 108 tasks in `Toolathlon/tasks/finalpool` (classified programmatically;
 see `task_classification.json`). Status as of 2026-08-01.
 
-**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 41.**
+**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 42.**
 Every validated task runs from one image with no logged-in account behind it,
 except where the task's subject matter *is* live public data (see "live by
 design"). The other 22 generated directories run their upstream grader and
@@ -101,6 +101,34 @@ agent drives the same MCP tool surface via `mcp-tool`. See MOCK_TRACK.md.
 | live-transactions | 1.0 | 0.0 |
 | machine-operating | 1.0 | 0.0 |
 | price-comparison | 1.0 | 0.0 |
+
+### Mock track — google sheets + drive (1 validated, backend done)
+
+`update-material-inventory` (google_sheet + woocommerce) validates the
+whole sheets/drive stack: upstream preprocess runs verbatim — Drive folder
+create/clear, `files().copy` of the public source spreadsheet (snapshotted
+into the seed), config rewrite — and the grader's gspread/googleapiclient
+reads go through the same facade. Key pieces (2026-08-01):
+
+- the gdrive facade router federates over the google-sheets-mock state:
+  spreadsheets and folders ARE Drive files there (list/get/copy/patch/
+  delete/permissions), so a sheet copied through Drive is the sheet the
+  sheets API serves;
+- the gsheets router accepts a bare sheet name as an A1 range
+  (`values/Material_Inventory`), which gspread/googleapiclient use;
+- woocommerce mock: `status=any` filter is a no-op (WC REST behaviour),
+  `set_paid` on order create stamps date_paid;
+- randomized-order groundtruth is re-derived at verify time from the
+  store's own orders (tests/derive_expected.py, update-cover pattern);
+  preprocess's static input expected_results.json is staged in the image
+  and destroyed with the task tree after init.
+
+| task | oracle | nop |
+|---|---|---|
+| update-material-inventory | 1.0 | 0.0 |
+
+woocommerce-stock-alert is next (source sheet already snapshotted into
+its seed); the remaining 9 google_sheet tasks follow the same recipe.
 
 ### Local and live-web, added this round (8 tasks)
 
