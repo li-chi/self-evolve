@@ -20,6 +20,9 @@ init() {
   mkdir -p /var/lib/mock-state/gsheets
   export NETREDIRECT_MAP='{"sheets.googleapis.com": "http://127.0.0.1:10200/__svc/gsheets", "www.googleapis.com": "http://127.0.0.1:10200/__svc/googleapis", "oauth2.googleapis.com": "http://127.0.0.1:10200/__svc/goauth"}'
   export PYTHONPATH=/opt/mocks/netredirect:$PYTHONPATH
+  export MAIL_MOCK_STATE_DIR=/var/lib/mock-state/mail
+  mkdir -p /var/lib/mock-state/mail
+  mkdir -p /app/emails_download /app/emails_export
   if [ -f /opt/harbor-mcp/seeds/woocommerce_seed.json ] && [ ! -f /var/lib/mock-state/woocommerce/state.json ]; then
     cp /opt/harbor-mcp/seeds/woocommerce_seed.json /var/lib/mock-state/woocommerce/state.json
   fi
@@ -28,6 +31,11 @@ init() {
   fi
 
   # Service backends that must be listening before preprocess runs.
+  /opt/toolathlon/.venv/bin/python /opt/mocks/poste-mock/mailserver.py --state-dir /var/lib/mock-state/mail --users /opt/toolathlon/configs/users_data.json --smtp-port 1587 --imap-port 1143 > /var/run/toolathlon/mailserver.log 2>&1 &
+  for _ in $(seq 1 50); do
+    if /opt/toolathlon/.venv/bin/python -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(s.connect_ex(('127.0.0.1', 1143)))" 2>/dev/null; then break; fi
+    sleep 0.2
+  done
   /opt/toolathlon/.venv/bin/python /opt/mocks/woocommerce-mock/rest_facade.py --port 10003 --state-dir /var/lib/mock-state/woocommerce > /var/run/toolathlon/woocommerce-rest.log 2>&1 &
   for _ in $(seq 1 50); do
     if /opt/toolathlon/.venv/bin/python -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(s.connect_ex(('127.0.0.1', 10003)))" 2>/dev/null; then break; fi

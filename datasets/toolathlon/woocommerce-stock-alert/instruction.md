@@ -7,6 +7,7 @@ You need to read the inventory levels of WooCommerce products, check the current
 This environment provides the following service(s) as MCP tool servers:
 - `woocommerce`
 - `google_sheet`
+- `emails`
 
 Call them with `mcp-tool` (tool names and arguments are exactly the
 service's own):

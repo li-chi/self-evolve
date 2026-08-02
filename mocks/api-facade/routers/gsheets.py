@@ -25,21 +25,26 @@ def _grid(sheet):
 
 
 def _values(sheet, rng: str | None):
-    """Return the A1 range's values, trimming trailing empty rows/cols."""
+    """Return the A1 range's values, trimming trailing empty rows/cols.
+
+    gs._parse_range/_split_a1 yield 0-based INCLUSIVE bounds (or None for
+    open ends: "A:H" has no rows, "2:5" no columns) — convert to slices.
+    """
     r1, c1, r2, c2 = 0, 0, None, None
     if rng and "!" in rng:
         rng = rng.split("!", 1)[1]
     if rng:
         parsed = gs._parse_range(rng)
-        _sheet_name, r1, c1, r2, c2 = (parsed if len(parsed) == 5
-                                       else (None, *parsed))
-        r1 = (r1 or 1) - 1
-        c1 = (c1 or 1) - 1
-    rows = _grid(sheet)[r1:(r2 if r2 else None)]
+        _sheet_name, pr1, pc1, pr2, pc2 = (parsed if len(parsed) == 5
+                                           else (None, *parsed))
+        r1 = pr1 or 0
+        c1 = pc1 or 0
+        r2 = pr2 + 1 if pr2 is not None else None
+        c2 = pc2 + 1 if pc2 is not None else None
+    rows = _grid(sheet)[r1:r2]
     out = []
     for row in rows:
-        out.append([("" if v is None else v)
-                    for v in row[c1:(c2 if c2 else None)]])
+        out.append([("" if v is None else v) for v in row[c1:c2]])
     while out and not any(str(v).strip() for v in out[-1]):
         out.pop()
     return [[*r] for r in out]
@@ -96,12 +101,13 @@ def handle(method: str, path: str, query: dict, body, headers: dict):
                          "values": _values(sheet, cells)}
         if method in ("PUT", "POST"):
             rows = body.get("values") or []
-            r1, c1 = 1, 1
+            r1, c1 = 0, 0  # _write_range is 0-based
             cell = cells.split("!")[-1] if cells else ""
             cell = cell.split(":")[0]
             if cell and cell[0].isalpha():
-                parsed = gs._split_a1(cell)
-                r1, c1 = (parsed[0] or 1), (parsed[1] or 1)
+                pr, pc = gs._split_a1(cell)
+                r1 = pr if pr is not None else 0
+                c1 = pc if pc is not None else 0
             gs._write_range(sheet, r1, c1, rows)
             gs._save_state(state)
             return 200, {"spreadsheetId": sid, "updatedRange": rng,

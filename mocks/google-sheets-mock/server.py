@@ -693,6 +693,8 @@ def list_spreadsheets(folder_id: str | None = None) -> list[dict]:
         s = _load_state()
         items = []
         for sid, ss in s["spreadsheets"].items():
+            if ss.get("link_shared"):
+                continue  # link-shared external sheet: reachable by id only
             if folder_id is not None and ss.get("folder_id") != folder_id:
                 continue
             items.append({"id": sid, "name": ss["properties"]["title"]})
@@ -711,6 +713,8 @@ def search_spreadsheets(query: str,
         q = (query or "").lower()
         items = []
         for sid, ss in s["spreadsheets"].items():
+            if ss.get("link_shared"):
+                continue  # link-shared external sheet: reachable by id only
             if folder_id is not None and ss.get("folder_id") != folder_id:
                 continue
             if q and q not in ss["properties"]["title"].lower():

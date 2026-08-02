@@ -3,7 +3,7 @@
 Source: 108 tasks in `Toolathlon/tasks/finalpool` (classified programmatically;
 see `task_classification.json`). Status as of 2026-08-01.
 
-**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 42.**
+**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 43.**
 Every validated task runs from one image with no logged-in account behind it,
 except where the task's subject matter *is* live public data (see "live by
 design"). The other 22 generated directories run their upstream grader and
@@ -102,7 +102,7 @@ agent drives the same MCP tool surface via `mcp-tool`. See MOCK_TRACK.md.
 | machine-operating | 1.0 | 0.0 |
 | price-comparison | 1.0 | 0.0 |
 
-### Mock track — google sheets + drive (1 validated, backend done)
+### Mock track — google sheets + drive (2 validated, backend done)
 
 `update-material-inventory` (google_sheet + woocommerce) validates the
 whole sheets/drive stack: upstream preprocess runs verbatim — Drive folder
@@ -126,9 +126,15 @@ reads go through the same facade. Key pieces (2026-08-01):
 | task | oracle | nop |
 |---|---|---|
 | update-material-inventory | 1.0 | 0.0 |
+| woocommerce-stock-alert (sheets + woocommerce + emails) | 1.0 | 0.0 |
 
-woocommerce-stock-alert is next (source sheet already snapshotted into
-its seed); the remaining 9 google_sheet tasks follow the same recipe.
+stock-alert additionally exercised: link-shared source sheets are hidden
+from listings (reachable by id only, as on real Drive), the woocommerce
+facade serves the WP admin surface upstream sync code enumerates
+(shipping/zones default zone, empty taxes/attributes/webhooks, wp/v2
+posts), and the gsheets facade slices A1 ranges with 0-based inclusive
+bounds ("A:H" keeps column H). The remaining 8 google_sheet tasks follow
+the same recipe.
 
 ### Local and live-web, added this round (8 tasks)
 

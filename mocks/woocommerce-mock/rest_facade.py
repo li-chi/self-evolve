@@ -240,6 +240,8 @@ class Handler(BaseHTTPRequestHandler):
         wp, wp_params = self._wp_route()
         if wp is not None and wp.split("/")[0] == "media":
             return self._media_get(wp, wp_params)
+        if wp is not None and wp.split("/")[0] == "posts":
+            return self._posts_get(wp, wp_params)
         endpoint, params = self._route()
         if endpoint is None:
             return self._not_found("unknown API root")
@@ -259,6 +261,16 @@ class Handler(BaseHTTPRequestHandler):
         if coll not in COLLECTIONS:
             if endpoint in ("", "system_status", "data"):
                 return self._reply({"environment": {"version": "9.0.0"}})
+            if coll == "shipping/zones":
+                # a fresh WC install has only the default zone (id 0);
+                # clients enumerate zones to clean them up
+                return self._reply([{"id": 0,
+                                     "name": "Locations not covered by "
+                                             "your other zones",
+                                     "order": 0}])
+            if coll in ("taxes", "products/attributes", "webhooks"):
+                # empty on a fresh store; clients enumerate to clean up
+                return self._reply([])
             return self._not_found(f"no collection {coll}")
         key = COLLECTIONS[coll][0]
         bucket = state.get(key, {})
@@ -275,6 +287,8 @@ class Handler(BaseHTTPRequestHandler):
         wp, _wp_params = self._wp_route()
         if wp is not None and wp.split("/")[0] == "media":
             return self._media_upload()
+        if wp is not None and wp.split("/")[0] == "posts":
+            return self._posts_create()
         endpoint, _params = self._route()
         if endpoint is None:
             return self._not_found("unknown API root")
@@ -433,6 +447,37 @@ class Handler(BaseHTTPRequestHandler):
                 return self._not_found()
             _save(state)
         self._reply({"deleted": True, "previous": item})
+
+    # -- WordPress posts (wp/v2/posts): minimal blog surface ---------------
+
+    def _posts_get(self, wp: str, params: dict) -> None:
+        parts = wp.split("/")
+        with _LOCK:
+            state = _load()
+            posts = state.setdefault("posts", {})
+            if len(parts) > 1:
+                p = posts.get(parts[1])
+                return self._reply(p) if p else self._not_found()
+            items = sorted(posts.values(),
+                           key=lambda p: p.get("date", ""), reverse=True)
+            return self._reply(_paginate(items, params))
+
+    def _posts_create(self) -> None:
+        body = self._body()
+        with _LOCK:
+            state = _load()
+            posts = state.setdefault("posts", {})
+            pid = state.setdefault("next_id", {}).get("post", 1)
+            state["next_id"]["post"] = pid + 1
+            now = wcmock._now()
+            post = {"id": pid, "date": now, "date_gmt": now,
+                    "status": body.get("status", "publish"),
+                    "title": {"rendered": body.get("title", "")},
+                    "content": {"rendered": body.get("content", "")},
+                    "excerpt": {"rendered": body.get("excerpt", "")}}
+            posts[str(pid)] = post
+            _save(state)
+        return self._reply(post, status=201)
 
     def _batch(self, coll: str, body: dict) -> None:
         """WooCommerce batch endpoint: {create:[], update:[], delete:[]}."""

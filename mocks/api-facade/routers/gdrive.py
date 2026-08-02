@@ -55,6 +55,8 @@ def _sheets_files(gstate):
     for f in gstate.get("folders", {}).values():
         out[f["id"]] = _folder_as_drive_file(f)
     for ss in gstate.get("spreadsheets", {}).values():
+        if ss.get("link_shared"):
+            continue  # link-shared external sheet: reachable by id only
         out[ss["spreadsheetId"]] = _sheet_as_drive_file(ss)
     return out
 
@@ -197,6 +199,8 @@ def handle(method: str, path: str, query: dict, body, headers: dict):
                         new_ss.setdefault("properties", {})["title"] = \
                             body["name"]
                     new_ss["folder_id"] = (body.get("parents") or [None])[0]
+                    # the copy belongs to the account, unlike the source
+                    new_ss.pop("link_shared", None)
                     gstate["spreadsheets"][new_id] = new_ss
                     gsmod._save_state(gstate)
                     return 200, _sheet_as_drive_file(new_ss)
