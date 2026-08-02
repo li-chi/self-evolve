@@ -83,6 +83,14 @@ the first 119 rollouts (2026-08-01):
 - Phase profile before the fix (n=119): environment_setup 17 s mean,
   agent_setup 52 s, agent_execution 426 s, verifier 19 s.
 
+Measured after both fixes (20 trials, 4 tasks × k=5, `-n 16`, 2026-08-01):
+makespan **6.2 min** (the same mix ran at ~1.6 min/trial throughput
+before, ~5× slower), agent_setup **1.9 s** mean (was 52 s), 16 trials
+genuinely simultaneous, effective concurrency 9.8 (the tail is one long
+ab-testing rollout). Rewards match the earlier baseline exactly
+(excel-data-transformation 5/5, machine-operating 5/5, ppt-analysis 4/5,
+ab-testing 0/5), so the speedup did not change task behaviour.
+
 ## Track assignment
 
 - **Login-gated service** (GCP, GitHub, Notion, Google Sheets, W&B,
