@@ -39,7 +39,15 @@ datasets/toolathlon/    # tasks ported to the Harbor task format
     tests/              # test.sh + the upstream grader package
     solution/           # oracle solution (groundtruth ships only here)
 tools/                  # port_task.py, mock_track.py, build_base_image.sh
-jobs/                   # harbor run outputs (gitignored)
+jobs/                   # harbor run outputs; transient job dirs gitignored
+  toolathlon/<task>/<model>-#n/   # curated rollout archive (tracked):
+                        #   agent/trajectory.json  full agent conversation
+                        #   verifier/reward.txt    the verdict (1/0)
+                        #   verifier/test-stdout.txt, result.json, trial.log
+                        # Raw terminal capture (*.cast, *.pane) is written
+                        # locally but never committed — see .gitignore.
+                        # Fold a finished job in with:
+                        #   python3 tools/archive_rollouts.py jobs/<job-name>
 ```
 
 ## Running
