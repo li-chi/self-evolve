@@ -75,11 +75,15 @@ def reward_for(agent_dir: Path) -> float | None:
 # --------------------------------------------------------------------------
 
 
-def iter_trajectory_turns(jobs: Path = JOBS) -> Iterator[Turn]:
+def iter_trajectory_turns(jobs: Path = JOBS,
+                          exclude_jobs: set[str] | None = None) -> Iterator[Turn]:
     from tools.evolve.hook import _identity
 
+    exclude_jobs = exclude_jobs or set()
     for tj in sorted(jobs.rglob("agent/trajectory.json")):
-        _, task, run = _identity(tj.parent)
+        job, task, run = _identity(tj.parent)
+        if job in exclude_jobs:
+            continue
         reward = reward_for(tj.parent)
         try:
             traj = json.loads(tj.read_text())

@@ -102,10 +102,36 @@ class Pair:
     run: str
 
 
+def card_kind(failed: str, fixed: str, error: str) -> str:
+    """How transferable a card's lesson is.
+
+    arg-name  the argument *keys* changed -> a schema fact about the tool,
+              true wherever that tool is used
+    syntax    the payload never parsed -> an encoding rule (shell quoting,
+              JSON escaping), also tool-wide
+    value     same keys, different value -> the lesson is which table/bucket
+              exists in *that task*. Under a high-compliance consumer this is
+              worse than nothing: it hands one task's identifiers to another.
+    """
+    if "argument JSON is invalid" in error or "unrecognized arguments" in error:
+        return "syntax"
+    try:
+        a, b = json.loads(failed), json.loads(fixed)
+    except (json.JSONDecodeError, TypeError):
+        return "syntax"
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return "value"
+    return "arg-name" if set(a) != set(b) else "value"
+
+
+TRANSFERABLE = ("arg-name", "syntax")
+
+
 @dataclass
 class Card:
     key: tuple[str, ...]
     error_cls: str
+    kind: str = "value"
     failures: int = 0
     rollouts: set[tuple[str, str]] = field(default_factory=set)
     tasks: set[str] = field(default_factory=set)
@@ -121,6 +147,7 @@ class Card:
         return {
             "key": list(self.key),
             "name": self.name,
+            "kind": self.kind,
             "error_cls": self.error_cls,
             "failures": self.failures,
             "rollouts": len(self.rollouts),
@@ -199,13 +226,27 @@ def mine_pairs(turns: Iterable[Any], ct: contract.Contract | None = None
     return pairs
 
 
+# An action key made of flags, redirections or heredoc markers (`-c`, `>`,
+# `<<`, `'PYEOF'`) names no tool. Those families fire on nearly every inline
+# script and their "fix" is an unrelated script, so a card built on them is
+# noise that a high-fire-rate consumer like the guard arm will amplify.
+TOOLISH = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{2,}$")
+
+
+def names_a_tool(key: tuple[str, ...]) -> bool:
+    return bool(key) and all(TOOLISH.match(t) for t in key)
+
+
 def build_cards(pairs: list[Pair]) -> list[Card]:
     cards: dict[tuple[tuple[str, ...], str], Card] = {}
     for p in pairs:
+        if not names_a_tool(p.key):
+            continue
         k = (p.key, p.error_cls)
         c = cards.get(k)
         if c is None:
             c = cards[k] = Card(p.key, p.error_cls,
+                                kind=card_kind(p.failed_args, p.fixed_args, p.error),
                                 example_error=p.error[:200],
                                 example_failed=p.failed_args[:400],
                                 example_fixed=p.fixed_args[:400])
@@ -250,12 +291,21 @@ def score(pairs: list[Pair]) -> None:
     print(f"  novel to their rollout           : {miss:4d} ({100*miss/max(tot,1):.0f}%)")
 
 
+# Rollouts produced *under* an intervention are not acquisition data: mining
+# them feeds the store its own influence back. `ab-json`/`ab-xml` are someone
+# else's parser experiment, so their serving config is unknown to us.
+INTERVENED = {"big-guard", "cardab-cards", "ab-parse", "ab-json", "ab-xml"}
+
+
 def turn_source(argv: list[str]) -> Iterator[Any]:
     """Endpoint-visible turns by default; the harness artifact only on request."""
     src = argv[argv.index("--source") + 1] if "--source" in argv else "ledger"
     if src == "trajectory":
-        print("# source: Harbor trajectory.json (harness-parsed commands)")
-        return replay.iter_trajectory_turns()
+        skip = set(INTERVENED)
+        if "--exclude" in argv:
+            skip |= set(argv[argv.index("--exclude") + 1].split(","))
+        print(f"# source: Harbor trajectory.json, excluding {sorted(skip)}")
+        return replay.iter_trajectory_turns(exclude_jobs=skip)
     arms = [d.name for d in replay.STORE.iterdir() if d.is_dir()] \
         if replay.STORE.is_dir() else []
     print(f"# source: hook ledger, arms={arms or 'none'}")
@@ -286,7 +336,8 @@ def write_store(pairs: list[Pair], out: str, min_rollouts: int = 2) -> None:
     tasks = sorted({p.task for p in pairs})
     for task in tasks:
         others = [p for p in pairs if p.task != task]
-        cards = [c for c in build_cards(others) if len(c.rollouts) >= min_rollouts]
+        cards = [c for c in build_cards(others)
+                 if len(c.rollouts) >= min_rollouts and c.kind in TRANSFERABLE]
         with open(os.path.join(out, f"{task}.json"), "w") as f:
             json.dump([c.to_dict() for c in cards], f, indent=1)
     print(f"{len(tasks)} leave-one-task-out card files -> {out}/")
