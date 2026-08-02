@@ -3,7 +3,7 @@
 Source: 108 tasks in `Toolathlon/tasks/finalpool` (classified programmatically;
 see `task_classification.json`). Status as of 2026-08-01.
 
-**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 40.**
+**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 41.**
 Every validated task runs from one image with no logged-in account behind it,
 except where the task's subject matter *is* live public data (see "live by
 design"). The other 22 generated directories run their upstream grader and
@@ -135,6 +135,7 @@ agent drives the same MCP tool surface via `mcp-tool`. See MOCK_TRACK.md.
 | sales-accounting | 1.0 | 0.0 |
 | university-course-selection | 1.0 | 0.0 |
 | git-milestone | 1.0 | 0.0 |
+| git-repo (live github search; grading is local) | 1.0 | 0.0 |
 
 ### Live by design (5 tasks)
 
@@ -280,7 +281,7 @@ Three backend patterns are now proven and reusable:
 | google_sheet | 10 | `gspread` + Drive `googleapiclient` over google-sheets-mock / google-drive-mock | 1 |
 | notion | 8 | notion client over notion-mock | 1 or 3 |
 | woocommerce | 8 | **done** — port the tasks | 3 |
-| github | 5 | GitHub REST facade over github-mock (`utils.app_specific.github` speaks `requests`); `git-repo` / `sync-todo-to-readme` also need git-over-HTTP | 3 |
+| github | 4 | GitHub REST facade over github-mock (`utils.app_specific.github` speaks `requests`); probed 2026-08-01: `git-repo` validated (grading is local, search stays live); `sync-todo-to-readme` needs a LUFFY repo seed + git-over-HTTP; `personal-website-construct` needs an academicpages repo snapshot in the seed; `dataset-license-issue` needs the hf facade to serve the user's own datasets while public license lookups stay live (mock-or-passthrough split) | 3 |
 | snowflake | 4 | snowflake connector shim over snowflake-mock | 1 |
 | huggingface | 4 | `huggingface_hub` over huggingface-mock | 1 or 3 |
 | google_map | 6 | Maps API facade over google-maps-mock | 3 |

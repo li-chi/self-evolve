@@ -59,7 +59,12 @@ def _load_state() -> dict:
                 return json.load(f)
         return _empty_state()
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        s = json.load(f)
+    # A state file written as {} (or partially) by another process must
+    # not KeyError downstream - merge the skeleton's missing keys.
+    for k, v in _empty_state().items():
+        s.setdefault(k, v)
+    return s
 
 
 def _save_state(state: dict) -> None:
