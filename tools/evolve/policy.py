@@ -115,6 +115,33 @@ def _relevance(card: dict[str, Any], haystack: str) -> int:
     return 0
 
 
+# A JSON string escape that is not one of the legal ones. This is the fault
+# behind `mcp-tool: argument JSON is invalid: Invalid \escape` — the model
+# writes \` around an identifier, which the shell strips and JSON rejects.
+_BAD_ESCAPE = re.compile(r'\\[^"\\/bfnrtu]')
+
+
+def violates(card: dict[str, Any], commands: str) -> bool:
+    """Does the proposed command actually exhibit this card's fault?
+
+    Matching on the tool alone fires on every correct call too. Measured over
+    892 fires of the tool-only version: the violation was present in *zero* of
+    them, and the model still rewrote its action 93% of the time — so the arm
+    was noise, and it cost 11 points of reward.
+    """
+    kind = card.get("kind")
+    if kind == "arg-name":
+        try:
+            bad = set(json.loads(card["example_failed"]))
+            good = set(json.loads(card["example_fixed"]))
+        except (json.JSONDecodeError, TypeError):
+            return False
+        return any(f'"{k}"' in commands for k in bad - good)
+    if kind == "syntax":
+        return bool(_BAD_ESCAPE.search(commands))
+    return False
+
+
 def commands_of(response: str) -> list[str]:
     obj = parse_terminus(response) or {}
     return [c.get("keystrokes", "") for c in (obj.get("commands") or [])
@@ -145,16 +172,22 @@ def guard(session: dict[str, Any], messages: list[dict[str, Any]], response: str
     hits = []
     for c in cards:
         scope, tool = _scope_and_tool(c)
-        if tool and tool in commands and all(s in commands for s in scope):
-            hits.append(c)
+        if not (tool and tool in commands and all(s in commands for s in scope)):
+            continue
+        if not violates(c, commands):
+            continue
+        hits.append(c)
     if not hits:
         return None
     hits.sort(key=lambda c: (-c.get("rollouts", 0), -len(c.get("tasks", []))))
-    picked = hits[:MAX_CARDS]
+    seen: set[str] = set()          # one card per tool, best-evidenced first
+    picked = [c for c in hits
+              if not (c["name"] in seen or seen.add(c["name"]))][:MAX_CARDS]
     from tools.evolve.mine import as_note
 
-    note = (as_note(picked) + "\n\nYou have not run those commands yet. Reissue "
-            "this turn's response, corrected if any contract above applies to it.")
+    note = (as_note(picked) + "\n\nOne of the commands you just proposed breaks "
+            "that contract, and it has not run yet. Reissue this turn's response "
+            "with that one command corrected; leave everything else unchanged.")
     return note, picked
 
 
