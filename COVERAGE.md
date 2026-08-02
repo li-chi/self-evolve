@@ -3,7 +3,7 @@
 Source: 108 tasks in `Toolathlon/tasks/finalpool` (classified programmatically;
 see `task_classification.json`). Status as of 2026-08-01.
 
-**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 34.**
+**Task directories generated: 56 / 108. Validated (oracle 1.0 / nop 0.0): 40.**
 Every validated task runs from one image with no logged-in account behind it,
 except where the task's subject matter *is* live public data (see "live by
 design"). The other 22 generated directories run their upstream grader and
@@ -14,7 +14,7 @@ listed under "generated, oracle pending".
 
 Bar: `oracle → 1.0` and `nop → 0.0`, using the upstream grader unmodified.
 
-### Mock track — emails / poste.io (1 validated, backend done)
+### Mock track — emails / poste.io (3 validated, backend done)
 
 `mocks/poste-mock/mailserver.py` is a self-contained SMTP + IMAP4rev1 server
 on the ports upstream's poste.io uses, with accounts loaded from Toolathlon's
@@ -26,8 +26,13 @@ from lockon-n/emails-mcp into its own venv) pointed at localhost.
 | task | oracle | nop |
 |---|---|---|
 | course-assistant | 1.0 | 0.0 |
-| apply-phd-email | pending oracle (agent must send mail) | 0.0 |
-| git-bug-hunt | pending oracle (agent must send mail) | 0.0 |
+| apply-phd-email | 1.0 | 0.0 |
+| git-bug-hunt | 1.0 | 0.0 |
+
+The mail-sending oracle pattern is established: solve.py drives the real
+emails-mcp server via `mcp-tool call emails send_email` (attachments
+resolve against /app). apply-phd-email additionally unpacks its shipped
+reference tree verifier-side (tests/pre_grade.sh, pure decompression).
 
 This unblocks the 24-task emails cluster: what remains per task is the
 oracle and, where the task also touches another service, that service's
@@ -252,8 +257,8 @@ wired up (nop → 0.0), but no oracle yet. Two reasons:
   (`gdp-cr5-analysis`, `inter-final-performance-analysis`,
   `llm-training-dataset`, `vlm-history-completer` → google_sheet;
   `notion-movies` → notion; `fillout-online-forms` → google_forms OAuth;
-  `latex-prompt-box` → hand-written LaTeX edit; `apply-phd-email`,
-  `git-bug-hunt` → email-sending oracle).
+  `latex-prompt-box` → hand-written LaTeX edit). `apply-phd-email` and
+  `git-bug-hunt` moved to validated (email-sending oracle pattern).
 
 ## Not yet generated: 52 tasks
 
