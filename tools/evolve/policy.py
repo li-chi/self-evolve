@@ -5,6 +5,8 @@ Everything here is a no-op in the `log` arm. Arms are selected with
 
   log           pass-through + ledger (baseline; must reproduce harbor exactly)
   cards         `build_note` injects retrieved experience as a prompt suffix
+  guard         intercept a *proposed* action, and if a card matches the
+                command itself, regenerate the turn with that card attached
   audit         completion gate: one extra model call before a `task_complete`
 
 Arms compose by substring, e.g. `cards+audit`.
@@ -31,6 +33,10 @@ from typing import Any
 # Arm: cards
 # --------------------------------------------------------------------------
 
+
+# induced action keys start with the family verb (`call`, `tools`, `schema`);
+# those name the invoker, not the tool, so they never take part in matching.
+_VERBS = {"call", "tools", "schema"}
 
 CARDS_DIR = os.environ.get("EVOLVE_CARDS", "jobs/_cards")
 MAX_CARDS = int(os.environ.get("EVOLVE_MAX_CARDS", "3"))
@@ -67,25 +73,89 @@ def build_note(session: dict[str, Any], messages: list[dict[str, Any]]) -> str |
     if not cards:
         return None
 
-    instruction = messages[0].get("content", "") if messages else ""
-    recent = " ".join(m.get("content") or "" for m in messages[-4:])
-    haystack = f"{instruction}\n{recent}"
+    # The whole transcript, not a recent window. Only 15% of first-time tool
+    # calls name the tool in the instruction; another 31% have it appear in an
+    # earlier observation (the `mcp-tool tools <svc>` discovery step), which a
+    # four-message window has almost always scrolled past.
+    haystack = "\n".join(m.get("content") or "" for m in messages)
 
-    scored = []
-    for c in cards:
-        tokens = [t for t in c.get("key", []) if t not in ("call",)]
-        if not tokens or not all(t in haystack for t in tokens):
-            continue
-        scored.append((c.get("rollouts", 0), len(c.get("tasks", [])), c))
+    scored = [(s, c.get("rollouts", 0), len(c.get("tasks", [])), c)
+              for c in cards for s in (_relevance(c, haystack),) if s]
     if not scored:
         return None
-    scored.sort(key=lambda x: (-x[0], -x[1]))
+    scored.sort(key=lambda x: (-x[0], -x[1], -x[2]))
 
-    picked = [c for _, _, c in scored[:MAX_CARDS]]
+    picked = [c for _, _, _, c in scored[:MAX_CARDS]]
     session.setdefault("cards_injected", set()).update(c["name"] for c in picked)
     from tools.evolve.mine import as_note
 
     return as_note(picked)
+
+
+def _scope_and_tool(card: dict[str, Any]) -> tuple[list[str], str]:
+    """(namespace tokens, tool token) from an induced action key."""
+    tokens = [t for t in card.get("key", []) if t not in _VERBS]
+    return (tokens[:-1], tokens[-1]) if tokens else ([], "")
+
+
+def _relevance(card: dict[str, Any], haystack: str) -> int:
+    """2 when the tool itself is in play, 1 when only its service is named.
+
+    Service-level matching is what makes a card usable *before* the first
+    call: an instruction names `woocommerce` long before `woo_products_get`
+    ever appears.
+    """
+    scope, tool = _scope_and_tool(card)
+    if not tool:
+        return 0
+    if tool in haystack and all(s in haystack for s in scope):
+        return 2
+    if scope and all(s in haystack for s in scope):
+        return 1
+    return 0
+
+
+def commands_of(response: str) -> list[str]:
+    obj = parse_terminus(response) or {}
+    return [c.get("keystrokes", "") for c in (obj.get("commands") or [])
+            if isinstance(c, dict)]
+
+
+def guard(session: dict[str, Any], messages: list[dict[str, Any]], response: str
+          ) -> tuple[str, list[dict[str, Any]]] | None:
+    """Cards matching an action the model has *proposed but not yet run*.
+
+    Retrieval before the fact can only ever cover the 46% of first-time calls
+    whose tool is named somewhere earlier; the other 54% are cold. But the
+    endpoint sees the proposed command in the completion before the harness
+    executes it, so matching against the command itself covers everything —
+    and costs tokens only on the turns where a card actually applies.
+    """
+    cards = _cards_for(session.get("task", "?"))
+    if not cards:
+        return None
+    obj = parse_terminus(response) or {}
+    commands = " ".join(
+        c.get("keystrokes", "") for c in (obj.get("commands") or [])
+        if isinstance(c, dict)
+    )
+    if not commands.strip():
+        return None
+
+    hits = []
+    for c in cards:
+        scope, tool = _scope_and_tool(c)
+        if tool and tool in commands and all(s in commands for s in scope):
+            hits.append(c)
+    if not hits:
+        return None
+    hits.sort(key=lambda c: (-c.get("rollouts", 0), -len(c.get("tasks", []))))
+    picked = hits[:MAX_CARDS]
+    from tools.evolve.mine import as_note
+
+    note = (as_note(picked) + "\n\nYou have not run those commands yet. Reissue "
+            "this turn's response, corrected if any contract above applies to it.")
+    return note, picked
 
 
 # --------------------------------------------------------------------------

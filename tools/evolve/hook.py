@@ -267,6 +267,24 @@ def install() -> None:
                 "SGLang is missing --reasoning-parser qwen3"
             )
 
+        # ---- pre-execution guard: the proposed action has not run yet ----
+        guard = None
+        if "guard" in ARM and role == "main":
+            g = policy.guard(s, messages, r.content)
+            if g:
+                note, hits = g
+                before = r.content
+                r = await orig_call(self, f"{sent}\n\n{note}", message_history, **kw)
+                s["extra_calls"] += 1
+                # counterfactual: the same context with and without the card,
+                # so card influence is measurable per turn without any reward
+                guard = {
+                    "cards": [c["name"] for c in hits],
+                    "before": before,
+                    "changed": policy.commands_of(before)
+                    != policy.commands_of(r.content),
+                }
+
         # ---- extra compute: another call on the same endpoint, harness-invisible ----
         audit = None
         if "audit" in ARM and role == "main" and policy.claims_done(r.content):
@@ -302,6 +320,7 @@ def install() -> None:
                 "compacted": dropped > 0 and role == "main",
                 "new_messages": messages[reused:],
                 "injected": note,
+                "guard": guard,
                 "reasoning_leak": leaked,
                 "response": r.content,
                 "reasoning": r.reasoning_content,
