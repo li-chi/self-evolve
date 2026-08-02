@@ -3,6 +3,14 @@
 # kubectl/kind/helm + playwright chromium), exactly what upstream agents get.
 FROM lockon0927/toolathlon-task-image:1016beta
 
+# Harness recording tools (tmux + asciinema), pre-baked so terminus-2's
+# runtime tool installation short-circuits. Without this every trial spends
+# ~50s in apt (mean over 119 rollouts) and, under concurrency, the install
+# can blow its 240s budget and lose the session recording entirely.
+# Harness-side tooling only — the task-visible environment is unchanged.
+RUN apt-get update -qq && apt-get install -y -qq tmux asciinema \
+ && rm -rf /var/lib/apt/lists/*
+
 # Vendored Toolathlon harness (utils/, configs/, pyproject.toml, uv.lock).
 # Graders and preprocess run under the EXACT pinned dependency set via
 # `uv run` from /opt/toolathlon, mirroring upstream's

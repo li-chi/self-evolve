@@ -166,7 +166,11 @@ def _new_product(state: dict, data: dict) -> dict:
         "name": data.get("name", ""),
         "slug": data.get("slug") or _slugify(data.get("name", f"product-{pid}")),
         "permalink": f"https://shop.mock/?p={pid}",
-        "date_created": now, "date_modified": now,
+        # WC REST v3 honours a caller-supplied date_created (upstream
+        # preprocess backdates products this way); default to now.
+        "date_created": data.get("date_created") or now,
+        "date_modified": data.get("date_modified")
+                         or data.get("date_created") or now,
         "type": data.get("type", "simple"),
         "status": data.get("status", "publish"),
         "featured": bool(data.get("featured", False)),
@@ -519,7 +523,11 @@ def _new_order(state: dict, data: dict) -> dict:
         "created_via": data.get("created_via", "rest-api"),
         "version": "9.0.0", "status": data.get("status", "pending"),
         "currency": data.get("currency", "USD"),
-        "date_created": now, "date_modified": now,
+        # Honour caller-supplied dates (upstream preprocess backdates
+        # historical orders); default to now.
+        "date_created": data.get("date_created") or now,
+        "date_modified": data.get("date_modified")
+                         or data.get("date_created") or now,
         "discount_total": "0.00", "discount_tax": "0.00",
         "shipping_total": "0.00", "shipping_tax": "0.00",
         "cart_tax": "0.00", "total": f"{total:.2f}", "total_tax": "0.00",
@@ -531,7 +539,9 @@ def _new_order(state: dict, data: dict) -> dict:
         "shipping": data.get("shipping", {}),
         "payment_method": data.get("payment_method", ""),
         "payment_method_title": data.get("payment_method_title", ""),
-        "transaction_id": "", "date_paid": None, "date_completed": None,
+        "transaction_id": "",
+        "date_paid": data.get("date_paid"),
+        "date_completed": data.get("date_completed"),
         "cart_hash": "",
         "meta_data": data.get("meta_data", []),
         "line_items": line_items,

@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash coreutils tar ripgrep git curl unzip poppler-utils \
+    tmux asciinema \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies for Toolathlon graders (utils.general.helper and friends)

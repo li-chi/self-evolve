@@ -57,11 +57,31 @@ python3 tools/port_task.py ab-testing --mock google-cloud
 
 # self-hosted qwen baseline, 5 rollouts
 .venv/bin/harbor run -p datasets/toolathlon/<task> -a terminus-2 \
-  -m openai/qwen3.6-35b -k 5 --env-file .env
+  -m openai/qwen3.6-35b -k 5 -n 16 --env-file .env
 ```
 
 Model endpoints live in `.env` (gitignored): the self-hosted SGLang/LiteLLM
 proxy at `https://glm.analogyai.ai/v1`, model `qwen3.6-35b`.
+
+## Rollout throughput
+
+The GPU server batches well; the limits are all client-side. Findings from
+the first 119 rollouts (2026-08-01):
+
+- **Run batches with `-n 16`.** Harbor's default is 4 and earlier batches
+  peaked at 6 concurrent trials (effective concurrency ~5). Task containers
+  are capped at 1 CPU / 2 GB each (task.toml) and the Docker Desktop VM has
+  20 CPUs / 64 GB, so the host machine was idle by allocation — the trial
+  semaphore was the bottleneck, and each trial's serial ~3.4 s API calls
+  left the GPU underused.
+- **tmux + asciinema are baked into the base images.** terminus-2 installs
+  them per trial otherwise: 52 s mean agent_setup across the 119 rollouts,
+  and under concurrent apt load the 240 s install budget expires — which is
+  what killed the whole `qwen5x-all` batch (trials proceed without
+  recording, or die in setup). With the tools pre-baked the install
+  short-circuits in one exec.
+- Phase profile before the fix (n=119): environment_setup 17 s mean,
+  agent_setup 52 s, agent_execution 426 s, verifier 19 s.
 
 ## Track assignment
 

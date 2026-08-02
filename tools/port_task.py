@@ -369,10 +369,13 @@ def main():
         name=task, description=json.dumps(desc),
         kw=json.dumps(servers)[1:-1], servers=json.dumps(servers)))
 
-    # tests: full task dir (grader + groundtruth + fixtures), grader parity
+    # tests: full task dir (grader + groundtruth + fixtures), grader parity.
+    # initial_workspace ships too: several graders read templates from it
+    # (e.g. filter-low-selling-products' email/blog templates), and the agent
+    # already has those files in /app, so nothing verifier-side is leaked.
     pkg = os.path.join(dst, "tests", "pkg", "tasks", "finalpool", task)
     shutil.copytree(src, pkg, ignore=shutil.ignore_patterns(
-        "__pycache__", "initial_workspace", ".DS_Store", "__MACOSX"))
+        "__pycache__", ".DS_Store", "__MACOSX"))
     open(os.path.join(dst, "tests", "traj_placeholder.json"), "w").write("{}")
     test_sh = os.path.join(dst, "tests", "test.sh")
     open(test_sh, "w").write(TEST_SH.replace("{name}", task).replace(

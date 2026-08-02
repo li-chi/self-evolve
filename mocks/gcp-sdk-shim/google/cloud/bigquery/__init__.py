@@ -22,6 +22,7 @@ __all__ = [
     "Client", "Dataset", "DatasetReference", "Table", "TableReference",
     "SchemaField", "LoadJobConfig", "SourceFormat", "WriteDisposition",
     "TimePartitioning", "TimePartitioningType", "QueryJobConfig",
+    "ScalarQueryParameter",
 ]
 
 
@@ -114,7 +115,27 @@ class LoadJobConfig:
 
 class QueryJobConfig:
     def __init__(self, **kw):
+        self.query_parameters = []
         self.__dict__.update(kw)
+
+
+class ScalarQueryParameter:
+    """Named scalar parameter, substituted into the SQL text by the shim's
+    query() (SQLite has no @name binding for BigQuery-style parameters)."""
+
+    def __init__(self, name, type_, value):
+        self.name = name
+        self.type_ = (type_ or "STRING").upper()
+        self.value = value
+
+    def sql_literal(self):
+        if self.value is None:
+            return "NULL"
+        if self.type_ in ("INT64", "INTEGER", "FLOAT64", "FLOAT", "NUMERIC"):
+            return str(self.value)
+        if self.type_ in ("BOOL", "BOOLEAN"):
+            return "TRUE" if self.value else "FALSE"
+        return "'" + str(self.value).replace("'", "''") + "'"
 
 
 class DatasetReference:
@@ -531,6 +552,9 @@ class Client:
         return _Job(num_rows=len(rows))
 
     def query(self, query, job_config=None, location=None, project=None):
+        for p in getattr(job_config, "query_parameters", None) or []:
+            if isinstance(p, ScalarQueryParameter) and p.name:
+                query = query.replace(f"@{p.name}", p.sql_literal())
         state = ms.load_state()
         rewritten, referenced, ref_tables = ms.rewrite_query(query, state)
         conn = ms.db()

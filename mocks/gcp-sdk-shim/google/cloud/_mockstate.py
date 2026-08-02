@@ -98,7 +98,12 @@ def load_state() -> dict:
         s.setdefault("project_id", PROJECT_ID)
         return s
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        s = json.load(f)
+    # A state file written as {} (or partially) by another process must not
+    # KeyError downstream — fill in the skeleton's missing top-level keys.
+    for k, v in empty_state().items():
+        s.setdefault(k, v)
+    return s
 
 
 def save_state(state: dict) -> None:

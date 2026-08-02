@@ -7,6 +7,7 @@ Please check all customers who have completed their first order in our store in 
 This environment provides the following service(s) as MCP tool servers:
 - `woocommerce`
 - `google-cloud`
+- `emails`
 
 Call them with `mcp-tool` (tool names and arguments are exactly the
 service's own):

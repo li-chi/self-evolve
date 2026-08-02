@@ -33,7 +33,7 @@ This unblocks the 24-task emails cluster: what remains per task is the
 oracle and, where the task also touches another service, that service's
 backend.
 
-### Mock track — woocommerce (1 validated, backend done)
+### Mock track — woocommerce (5 validated, backend done)
 
 `mocks/woocommerce-mock/rest_facade.py` serves the store over HTTP out of
 the woocommerce mock's state: `/wp-json/wc/v3` products (with variations,
@@ -48,7 +48,34 @@ tools and the REST facade read one store.
 | task | oracle | nop |
 |---|---|---|
 | woocommerce-update-cover | 1.0 | 0.0 |
-| filter-low-selling-products (woocommerce + emails) | pending: needs a verify-time derivation, upstream ships an empty expected_results.json | 0.0 |
+| inventory-sync | 1.0 | 0.0 |
+| woocommerce-new-product (woocommerce + emails) | 1.0 | 0.0 |
+| filter-low-selling-products (woocommerce + emails) | 1.0 | 0.0 |
+| woocommerce-new-welcome (woocommerce + emails + google-cloud) | 1.0 | 0.0 |
+
+What the four new validations needed (all fixed 2026-08-01):
+
+- inventory-sync: the update-cover pattern one level up — preprocess's
+  product mapping (region -> local id -> WC id) is re-derived at verify
+  time from the store's own SKU/meta records (`tests/derive_wc_config.py`).
+- woocommerce mock fidelity: caller-supplied `date_created`/`date_completed`
+  on products and orders are now honoured (WC REST v3 behaviour — upstream
+  preprocess backdates fixtures with it; before, every product/order was
+  stamped `now`, so "in stock > 90 days" style filters matched nothing).
+- tests/pkg now ships initial_workspace (port_task.py fixed): graders read
+  email/blog templates out of it at verify time; the agent already has the
+  same files in /app, so nothing leaks.
+- gcp shim: `ScalarQueryParameter`/`QueryJobConfig.query_parameters` are
+  supported (parameterised grader queries), and both the shim and the
+  google-cloud mock now merge the state skeleton over a partially-written
+  state.json instead of KeyError'ing.
+- oracle plumbing: `mcp-tool call` output is one JSON document per content
+  item (newline-joined), or plain text for tools like `send_email` — the
+  solve.py helpers parse accordingly.
+
+Remaining woocommerce-cluster tasks: update-material-inventory
+(google_sheet fixtures), woocommerce-customer-survey / product-recall
+(google_forms OAuth), woocommerce-stock-alert (google_sheet).
 
 Upstream's preprocess runs verbatim against it: 3 variable products, 3
 variations, 6 media items and 44 historical orders are created through the
