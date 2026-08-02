@@ -33,18 +33,14 @@ learning signal is the observation the harness sent back on the next turn.
 from __future__ import annotations
 
 import collections
+import difflib
 import json
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
-from tools.evolve import replay
-
-# `mcp-tool call <service> <tool> '<json args>'` — require the shell-quoted
-# JSON form so multi-line heredocs and python wrappers are skipped rather than
-# mis-parsed into nonsense cards.
-CALL = re.compile(r"mcp-tool\s+call\s+([\w.-]+)\s+([\w.-]+)\s+'(.*)'\s*$", re.S)
+from tools.evolve import contract, replay
 
 ERROR_LINE = re.compile(
     r"^.*(?:[Ee]rror|ERROR|Traceback|not found|not in allowed|[Ii]nvalid|"
@@ -63,6 +59,17 @@ _NORMALISERS = (
 )
 
 
+# `Traceback (most recent call last):` is the header, not the error; the
+# informative line is the exception at the end of the block.
+GENERIC = ("traceback (most recent call last):",)
+
+
+def _errors(text: str) -> list[str]:
+    lines = [e.strip() for e in ERROR_LINE.findall(text)]
+    specific = [e for e in lines if e.lower() not in GENERIC]
+    return specific or lines
+
+
 def error_class(line: str) -> str:
     s = line.strip()
     for pat, repl in _NORMALISERS:
@@ -75,20 +82,18 @@ class Invocation:
     task: str
     run: str
     turn: int
-    service: str
-    tool: str
+    key: tuple[str, ...]      # induced by contract.py, e.g. (call, svc, tool)
     args: str
     errors: list[str]
 
     @property
-    def key(self) -> tuple[str, str]:
-        return (self.service, self.tool)
+    def name(self) -> str:
+        return ".".join(self.key)
 
 
 @dataclass
 class Pair:
-    service: str
-    tool: str
+    key: tuple[str, ...]
     error: str
     error_cls: str
     failed_args: str
@@ -99,8 +104,7 @@ class Pair:
 
 @dataclass
 class Card:
-    service: str
-    tool: str
+    key: tuple[str, ...]
     error_cls: str
     failures: int = 0
     rollouts: set[tuple[str, str]] = field(default_factory=set)
@@ -109,10 +113,14 @@ class Card:
     example_fixed: str = ""
     example_error: str = ""
 
+    @property
+    def name(self) -> str:
+        return ".".join(self.key)
+
     def to_dict(self) -> dict[str, Any]:
         return {
-            "service": self.service,
-            "tool": self.tool,
+            "key": list(self.key),
+            "name": self.name,
             "error_cls": self.error_cls,
             "failures": self.failures,
             "rollouts": len(self.rollouts),
@@ -123,58 +131,46 @@ class Card:
         }
 
 
-# tmux echoes each command after a shell prompt, so the observation can be cut
-# into (command, output) segments and an error pinned on the call that caused
-# it. Without this every multi-call turn has to be discarded.
-PROMPT = re.compile(r"^\w+@[\w.-]+:[^#\n]*# ?", re.M)
+def invocations(turn, ct: contract.Contract) -> Iterator[Invocation]:
+    """Actions in one turn, with errors attributed per action.
 
+    Both the action grammar and the delimiter used to split the output come
+    from `contract.py`, which induced them from the stream — nothing here
+    knows that MCP or a shell prompt exist.
 
-def segments(observation: str) -> list[str]:
-    """Split terminal output into one chunk per executed command."""
-    parts = PROMPT.split(observation)
-    return parts[1:] if len(parts) > 1 else parts
-
-
-def invocations(turn) -> Iterator[Invocation]:
-    """Tool calls in one turn, with errors attributed per call.
-
-    The pane is a fixed-width capture, so a long command wraps across lines and
-    its arguments cannot be recovered from the echo. `service` and `tool` come
-    early enough to survive wrapping, which is all the matching needs — the
-    arguments come from `turn.commands`, which is verbatim.
+    The pane is a fixed-width capture, so a long command wraps and its
+    arguments cannot be read back out of the echo; the key survives wrapping,
+    which is all the matching needs, and the arguments come from
+    `turn.commands`, which is verbatim.
     """
-    matches = [CALL.search(c.strip()) for c in turn.commands]
-    matches = [m for m in matches if m]
-    if not matches:
+    parsed = [(c, ct.action_parts(c)) for c in turn.commands]
+    parsed = [(c, p) for c, p in parsed if p]
+    if not parsed:
         return
 
-    chunks = segments(turn.observation)
-    for m in matches:
-        service, tool = m.group(1), m.group(2)
-        if len(matches) == 1:
-            errors = ERROR_LINE.findall(turn.observation)
+    chunks = ct.segment(turn.observation)
+    for cmd, (key, args) in parsed:
+        if len(parsed) == 1:
+            errors = _errors(turn.observation)
         else:
-            # the chunk whose echoed command names this tool
-            errors = []
             for ch in chunks:
-                head = ch[:400]
-                if f"call {service} {tool}" in head or f"{service} {tool}" in head:
-                    errors = ERROR_LINE.findall(ch)
+                if all(tok in ch[:400] for tok in key):
+                    errors = _errors(ch)
                     break
             else:
                 continue  # cannot attribute; skip rather than guess
-        yield Invocation(
-            task=turn.task, run=turn.run, turn=turn.turn,
-            service=service, tool=tool, args=m.group(3).strip(),
-            errors=[e.strip() for e in errors],
-        )
+        yield Invocation(task=turn.task, run=turn.run, turn=turn.turn,
+                         key=key, args=args, errors=[e.strip() for e in errors])
 
 
-def mine_pairs(turns: Iterator[Any]) -> list[Pair]:
-    """error → later success on the same tool, within one rollout."""
+def mine_pairs(turns: Iterable[Any], ct: contract.Contract | None = None
+               ) -> list[Pair]:
+    """error → later success on the same action key, within one rollout."""
+    turns = list(turns)
+    ct = ct or contract.learn(turns)
     by_rollout: dict[tuple[str, str], list[Invocation]] = collections.defaultdict(list)
     for t in turns:
-        for inv in invocations(t):
+        for inv in invocations(t, ct):
             by_rollout[(inv.task, inv.run)].append(inv)
 
     pairs: list[Pair] = []
@@ -187,8 +183,15 @@ def mine_pairs(turns: Iterator[Any]) -> list[Pair]:
                 bad = pending.pop(inv.key)
                 if bad.args == inv.args:      # identical retry proves nothing
                     continue
+                # A correction is a small edit to the same action. A wholly
+                # different payload is the agent moving on to different work,
+                # which teaches nothing about the tool's contract.
+                if difflib.SequenceMatcher(None, bad.args, inv.args).ratio() < 0.5:
+                    continue
+                if bad.errors[0].strip().lower() in GENERIC:
+                    continue
                 pairs.append(Pair(
-                    service=inv.service, tool=inv.tool,
+                    key=inv.key,
                     error=bad.errors[0], error_cls=error_class(bad.errors[0]),
                     failed_args=bad.args, fixed_args=inv.args,
                     task=task, run=run,
@@ -197,12 +200,12 @@ def mine_pairs(turns: Iterator[Any]) -> list[Pair]:
 
 
 def build_cards(pairs: list[Pair]) -> list[Card]:
-    cards: dict[tuple[str, str, str], Card] = {}
+    cards: dict[tuple[tuple[str, ...], str], Card] = {}
     for p in pairs:
-        k = (p.service, p.tool, p.error_cls)
+        k = (p.key, p.error_cls)
         c = cards.get(k)
         if c is None:
-            c = cards[k] = Card(p.service, p.tool, p.error_cls,
+            c = cards[k] = Card(p.key, p.error_cls,
                                 example_error=p.error[:200],
                                 example_failed=p.failed_args[:400],
                                 example_fixed=p.fixed_args[:400])
@@ -227,12 +230,12 @@ def score(pairs: list[Pair]) -> None:
     cross_task_hit = 0
     for held, held_pairs in by_roll.items():
         others = [p for k, v in by_roll.items() if k != held for p in v]
-        known = {(p.service, p.tool, p.error_cls) for p in others}
+        known = {(p.key, p.error_cls) for p in others}
         known_other_task = {
-            (p.service, p.tool, p.error_cls) for p in others if p.task != held[0]
+            (p.key, p.error_cls) for p in others if p.task != held[0]
         }
         for p in held_pairs:
-            k = (p.service, p.tool, p.error_cls)
+            k = (p.key, p.error_cls)
             if k in known:
                 hit += 1
                 if k in known_other_task:
@@ -259,15 +262,52 @@ def turn_source(argv: list[str]) -> Iterator[Any]:
     return (t for arm in arms for t in replay.iter_ledger_turns(arm=arm))
 
 
+def as_note(card_dicts: list[dict], budget: int = 1400) -> str:
+    """Render cards as the text injected after the latest observation."""
+    lines = ["[operator note] Contracts observed in this environment on earlier "
+             "runs. They are facts about these tools, not suggestions:"]
+    for c in card_dicts:
+        lines.append(f"- {c['name']}: calling it as {c['example_failed'][:130]} "
+                     f"failed with \"{c['example_error'][:90]}\"; "
+                     f"the form that works is {c['example_fixed'][:130]}")
+        if sum(len(x) for x in lines) > budget:
+            break
+    return "\n".join(lines)
+
+
+def write_store(pairs: list[Pair], out: str, min_rollouts: int = 2) -> None:
+    """One card file per task, built from every *other* task's rollouts.
+
+    Leave-one-task-out, so injecting a card into a task can never be that
+    task's own lesson played back — what it measures is transfer.
+    """
+    import os
+    os.makedirs(out, exist_ok=True)
+    tasks = sorted({p.task for p in pairs})
+    for task in tasks:
+        others = [p for p in pairs if p.task != task]
+        cards = [c for c in build_cards(others) if len(c.rollouts) >= min_rollouts]
+        with open(os.path.join(out, f"{task}.json"), "w") as f:
+            json.dump([c.to_dict() for c in cards], f, indent=1)
+    print(f"{len(tasks)} leave-one-task-out card files -> {out}/")
+    for task in tasks:
+        n = len(json.load(open(os.path.join(out, f"{task}.json"))))
+        print(f"  {task:34} {n:3d} cards from other tasks")
+
+
 def main(argv: list[str]) -> int:
     cmd = argv[1] if len(argv) > 1 else "cards"
     pairs = mine_pairs(turn_source(argv))
     if cmd == "score":
         score(pairs)
         return 0
-    if cmd != "cards":
+    if cmd not in ("cards", "store"):
         print(__doc__)
         return 1
+
+    if cmd == "store":
+        write_store(pairs, argv[argv.index("--out") + 1])
+        return 0
 
     cards = build_cards(pairs)
     if "--json" in argv:
@@ -278,10 +318,10 @@ def main(argv: list[str]) -> int:
         return 0
 
     print(f"{len(pairs)} error->fix pairs -> {len(cards)} cards "
-          f"across {len({(c.service, c.tool) for c in cards})} tools\n")
+          f"across {len({c.key for c in cards})} actions\n")
     for c in cards[:20]:
         print(f"[{len(c.rollouts):2d} rollouts, {c.failures:2d} failures] "
-              f"{c.service}.{c.tool}")
+              f"{c.name}")
         print(f"    error : {c.error_cls}")
         print(f"    failed: {c.example_failed[:150]}")
         print(f"    fixed : {c.example_fixed[:150]}")

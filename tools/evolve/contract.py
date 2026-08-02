@@ -56,6 +56,16 @@ class Contract:
                 return k
         return None
 
+    def action_parts(self, command: str) -> tuple[tuple[str, ...], str] | None:
+        """(key, remaining argument text) for an action, or None."""
+        cmd = command.strip()
+        for fam in self.families:
+            k = _match(fam, cmd)
+            if k:
+                rest = " ".join(cmd.split()[len(fam):])
+                return k, rest.strip().strip("'").strip()
+        return None
+
     def segment(self, observation: str) -> list[str]:
         """Split an observation into one chunk per executed action."""
         if not self.delimiter:
@@ -215,13 +225,13 @@ def _common_suffix(strings: list[str]) -> str:
     return s
 
 
-def _learn_delimiter(parsed: list[tuple], action_field: str) -> str:
+def _learn_delimiter(turns: list) -> str:
     """Whatever sits immediately before an echoed action, generalised."""
     befores: list[str] = []
-    for t, obj in parsed:
+    for t in turns:
         if not t.observation:
             continue
-        for cmd in _commands_of(obj, action_field):
+        for cmd in t.commands:
             probe = cmd.strip()[:25]
             if len(probe) < 8:
                 continue
@@ -265,16 +275,20 @@ def _commands_of(obj: dict, action_field: str) -> list[str]:
 
 
 def learn(turns: list) -> Contract:
+    """Induce the contract. Schema and action field need raw completions;
+    grammar and delimiter only need the actions and what came back, so they
+    are learned the same way whichever source the turns came from."""
     rate, schema, parsed = _learn_schema(turns)
-    action_field, echo = _learn_action_field(parsed)
-    commands = [c for _, obj in parsed for c in _commands_of(obj, action_field)]
+    action_field, echo = ("", {})
+    if rate >= 0.5:
+        action_field, echo = _learn_action_field(parsed)
     return Contract(
         parse_rate=rate,
         schema=schema,
         action_field=action_field,
         field_echo=echo,
-        families=_learn_families(commands),
-        delimiter=_learn_delimiter(parsed, action_field),
+        families=_learn_families(c for t in turns for c in t.commands),
+        delimiter=_learn_delimiter(turns),
         n_turns=len(turns),
     )
 

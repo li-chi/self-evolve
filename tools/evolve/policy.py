@@ -22,7 +22,9 @@ logged next-turn observation, with no containers and no GPU.
 from __future__ import annotations
 
 import json
+import os
 import re
+from pathlib import Path
 from typing import Any
 
 # --------------------------------------------------------------------------
@@ -30,14 +32,60 @@ from typing import Any
 # --------------------------------------------------------------------------
 
 
+CARDS_DIR = os.environ.get("EVOLVE_CARDS", "jobs/_cards")
+MAX_CARDS = int(os.environ.get("EVOLVE_MAX_CARDS", "3"))
+_store: dict[str, list[dict[str, Any]]] = {}
+
+
+def _cards_for(task: str) -> list[dict[str, Any]]:
+    """Cards for a task, loaded from its leave-one-task-out file.
+
+    The file for task T is built from every *other* task's rollouts, so an
+    injected card can never be T's own lesson played back at it.
+    """
+    if task not in _store:
+        path = Path(CARDS_DIR) / f"{task}.json"
+        try:
+            _store[task] = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            _store[task] = []
+    return _store[task]
+
+
 def build_note(session: dict[str, Any], messages: list[dict[str, Any]]) -> str | None:
     """Return text to append after the latest observation, or None.
 
     Appended as a suffix so the prefix stays in SGLang's radix cache; the
     rollouts are prefill-dominated (up to ~55k prompt tokens/turn), so a
-    front-injected note that changes each turn would force a full re-prefill.
+    front-injected note that changed each turn would force a full re-prefill.
+
+    Retrieval is by action key, not prompt similarity: a card is relevant when
+    the tokens naming its action (service, tool) are present in the task
+    instruction or the recent transcript — i.e. when that tool is in play.
     """
-    return None
+    cards = _cards_for(session.get("task", "?"))
+    if not cards:
+        return None
+
+    instruction = messages[0].get("content", "") if messages else ""
+    recent = " ".join(m.get("content") or "" for m in messages[-4:])
+    haystack = f"{instruction}\n{recent}"
+
+    scored = []
+    for c in cards:
+        tokens = [t for t in c.get("key", []) if t not in ("call",)]
+        if not tokens or not all(t in haystack for t in tokens):
+            continue
+        scored.append((c.get("rollouts", 0), len(c.get("tasks", [])), c))
+    if not scored:
+        return None
+    scored.sort(key=lambda x: (-x[0], -x[1]))
+
+    picked = [c for _, _, c in scored[:MAX_CARDS]]
+    session.setdefault("cards_injected", set()).update(c["name"] for c in picked)
+    from tools.evolve.mine import as_note
+
+    return as_note(picked)
 
 
 # --------------------------------------------------------------------------
