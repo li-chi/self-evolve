@@ -184,6 +184,14 @@ measures, and no login is involved, so they stay live.
 | travel-exchange | yfinance FX | 1.0 | 0.0 |
 | train-ticket-plan | 12306 | n/a — the grader re-queries the live timetable, so no stored answer exists; the bar is nop → 0.0 with a sensible grader mismatch | 0.0 |
 
+> ⚠ **The baseline table below is stale.** It was measured while every mock
+> exposed its `mock_debug_*` fixture helpers on the agent's own tool surface —
+> `mock_debug_seed_table` writes rows "bypassing the allowlist", including into
+> tables a grader reads. 347 archived rollouts called one; 138 were graded pass.
+> Hidden in commit `b557373`. A post-fix control over 10 mock-track tasks scored
+> 42/100 where the pre-fix control scored 44/100. See
+> `tools/evolve/FINDINGS.md`.
+
 ## Baseline: qwen3.6-35b (self-hosted SGLang via LiteLLM), terminus-2, k=5
 
 ### Mock track — google-cloud
