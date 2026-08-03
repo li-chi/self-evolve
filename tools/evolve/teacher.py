@@ -46,28 +46,40 @@ Below are {n} independent attempts by a small model at the SAME task, in the \
 same environment. Each is a transcript of shell commands and their output. You \
 are NOT told which attempts succeeded — a grader exists but you cannot see it.
 
-Do two things.
+Work in three steps.
 
-1. JUDGE each attempt. Work only from evidence in its transcript: for every \
-outcome the task requires, decide whether the transcript shows it actually \
-happened. An agent claiming completion is not evidence. Give a verdict of \
-"pass" or "fail" and one sentence of reasoning naming the deciding evidence.
+STEP 1 — JUDGE each attempt. For every outcome the task requires, decide \
+whether the transcript shows it actually happened. An agent claiming completion \
+is not evidence. Verdict "pass" or "fail", plus one sentence naming the \
+deciding evidence.
 
-2. DISTIL what separates the attempts that satisfied the task from those that \
-did not, as guidance for a future attempt at a DIFFERENT task in this same \
-environment. It will be prepended to that run, so it must be:
-   - short: at most 8 bullets, each one line
-   - actionable: a rule the agent can follow, not an observation
-   - transferable: about this environment's tools and about how to work, not \
-about this task's specific tables or values
-   - grounded: only claim what the transcripts show
+STEP 2 — READ each attempt in light of its own verdict.
+  For each attempt you judged FAIL: name the single decisive fault — the point \
+  where it diverged from a run that would have satisfied the task — and the \
+  rule that would have prevented it.
+  For each attempt you judged PASS: name the step that produced the required \
+  outcome and that a failing attempt omitted or botched.
 
-Do not include anything a competent agent already knows. If the attempts \
-differ only by luck, say so rather than inventing a pattern.
+STEP 3 — DISTIL guidance for a future attempt at a DIFFERENT task in this same \
+environment. For each rule, cite attempts on BOTH sides with their polarity:
+  "complied" — attempts that followed the rule (positive evidence)
+  "violated" — attempts that broke it (counter-evidence)
+An attempt appearing on both sides of your evidence is expected and good: the \
+passes show the rule being followed, the failures show the cost of breaking it. \
+What makes a rule worthless is a violator that succeeded anyway. Class each:
+  "discriminative" — violating it cost the run the task.
+  "procedure"      — a step the passes share and the failures lack.
+  "contract"       — a fact about the tools every attempt hit regardless of \
+                     outcome. Include only if a run could plausibly not know it.
+Drop anything a competent agent already knows. If the attempts differ only by \
+luck, say so instead of inventing a pattern. At most 8 bullets, one line each.
 
 Return JSON only:
-{{"verdicts": [{{"id": "<id>", "verdict": "pass"|"fail", "why": "<one sentence>"}}],
-  "guidance": ["<bullet>", ...],
+{{"verdicts": [{{"id": "<id>", "verdict": "pass"|"fail", "why": "<sentence>"}}],
+  "faults":   [{{"id": "<id>", "fault": "<what went wrong>", "prevention": "<rule>"}}],
+  "key_steps":[{{"id": "<id>", "step": "<what this pass did that failures didn't>"}}],
+  "guidance": [{{"rule": "<one line>", "kind": "discriminative"|"procedure"|"contract",
+                 "complied": ["<id>", ...], "violated": ["<id>", ...]}}],
   "confidence": "high"|"medium"|"low"}}
 
 {traces}
@@ -152,9 +164,30 @@ def main(argv: list[str]) -> int:
         print(f"{v['id']:12} {v['verdict']:>8} {'pass' if g == 1.0 else 'fail':>8}"
               f"{'' if t == g else '   <-- disagree'}")
     print(f"\njudge agreement with grader: {hits}/{len(data['verdicts'])}")
-    print(f"confidence: {data.get('confidence')}\n\nDISTILLED GUIDANCE:")
+    print(f"confidence: {data.get('confidence')}")
+
+    # Audit by POLARITY, not presence. A rule cited on both sides is the
+    # strongest evidence there is — passes show it followed, failures show the
+    # cost of breaking it. What kills a rule is a violator that passed anyway;
+    # a complier that failed is fine, since runs fail for many reasons.
+    print("\nDISTILLED GUIDANCE (audited against the grader)")
     for b in data["guidance"]:
-        print(f"  - {b}")
+        comp, viol = b.get("complied", []), b.get("violated", [])
+        got_away = [i for i in viol if truth.get(i) == 1.0]
+        verdict = ("UNSOUND" if got_away else
+                   "sound" if len(viol) >= 2 else "weak (few violations seen)")
+        print(f"  [{b.get('kind','?'):14}] {b['rule']}")
+        print(f"      complied={len(comp)} ({sum(1 for i in comp if truth.get(i)==1.0)} passed)"
+              f"  violated={len(viol)} ({sum(1 for i in viol if truth.get(i)==0.0)} failed)"
+              f"  -> {verdict}"
+              + (f"  <-- {got_away} broke it and still passed" if got_away else ""))
+
+    if data.get("faults"):
+        print("\nPER-FAILURE FAULTS")
+        for f_ in data["faults"]:
+            ok = "" if truth.get(f_["id"]) == 0.0 else "  <-- grader says this one PASSED"
+            print(f"  {f_['id']}: {f_['fault']}{ok}")
+            print(f"      prevention: {f_['prevention']}")
     Path("jobs/_cards").mkdir(parents=True, exist_ok=True)
     out = Path("jobs/_cards") / f"_teacher_{task}.json"
     out.write_text(json.dumps({"task": task, **data, "truth": truth}, indent=1))
