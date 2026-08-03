@@ -148,6 +148,13 @@ def _induce(seqs: list[list[str]], min_support: int,
     if not heads:
         return []
     total = sum(heads.values())
+    # Only extend the grammar into a position most instances actually have.
+    # `len(seqs)` counts the branch; `total` counts the sequences long enough to
+    # reach this depth. Without this, a handful of stragglers can dominate a
+    # position and get frozen in as a literal — `mcp-tool call <slot> <slot>`
+    # became `... <slot> <slot> -a`, which then matched 2 commands out of 11,718.
+    if total < min_support:
+        return []
     top, n = heads.most_common(1)[0]
     # A closed vocabulary is a literal position even when it has several
     # values; a slot is a position whose values keep growing with the corpus.

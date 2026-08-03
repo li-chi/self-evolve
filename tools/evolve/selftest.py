@@ -130,6 +130,23 @@ async def main() -> int:
     check("main chain keeps growing after a subagent call",
           main[-1]["prefix_reused"] == 6, f"reused={main[-1]['prefix_reused']}")
 
+    # ---- 5b. the induced grammar still parses a tool call -----------------
+    # A grammar that stops matching makes the miner silently return nothing.
+    # It broke once: `_induce` extended into a 5th token position that almost
+    # no command has, froze a straggler in as a literal, and the family went
+    # from 11,718 matches to 2.
+    print("\ninduced grammar parses a real tool call")
+    from tools.evolve import contract, mine, replay as _r
+    ct = contract.learn(list(_r.iter_trajectory_turns(exclude_jobs=set(mine.INTERVENED))))
+    parsed = ct.action_parts(
+        "mcp-tool call google-cloud bigquery_run_query '{\"query\": \"SELECT 1\"}'")
+    check("tool call parses to (service, tool) + args",
+          parsed is not None and parsed[0] == ("google-cloud", "bigquery_run_query"),
+          repr(parsed)[:80])
+    matched = sum(1 for t in _r.iter_trajectory_turns(exclude_jobs=set(mine.INTERVENED))
+                  for c in t.commands if ct.action_key(c))
+    check("grammar matches a bulk of the corpus", matched > 1000, f"{matched} commands")
+
     # ---- 6. identity resolution for both Harbor layouts -------------------
     print("\ntrial identity")
     cases = {
