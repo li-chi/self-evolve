@@ -252,7 +252,8 @@ def install() -> None:
         s["fps"][role] = fps
 
         # ---- WRITE: suffix-only, so SGLang's radix cache keeps the prefix ----
-        note = policy.build_note(s, messages) if "cards" in ARM else None
+        note = (policy.build_note(s, messages)
+                if ("cards" in ARM or "teach" in ARM) else None)
         sent = f"{prompt}\n\n{note}" if note else prompt
 
         t0 = time.time()

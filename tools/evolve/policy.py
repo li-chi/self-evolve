@@ -4,6 +4,7 @@ Everything here is a no-op in the `log` arm. Arms are selected with
 `EVOLVE_ARM`:
 
   log           pass-through + ledger (baseline; must reproduce harbor exactly)
+  teach         inject the teacher's distilled rules once, at turn 1
   cards         `build_note` injects retrieved experience as a prompt suffix
   guard         intercept a *proposed* action, and if a card matches the
                 command itself, regenerate the turn with that card attached
@@ -39,6 +40,8 @@ from typing import Any
 _VERBS = {"call", "tools", "schema"}
 
 CARDS_DIR = os.environ.get("EVOLVE_CARDS", "jobs/_cards")
+TEACHER_DIR = os.environ.get("EVOLVE_TEACHER_DIR", "jobs/_teacher")
+_teacher: dict[str, list[dict[str, Any]]] = {}
 MAX_CARDS = int(os.environ.get("EVOLVE_MAX_CARDS", "3"))
 _store: dict[str, list[dict[str, Any]]] = {}
 
@@ -58,6 +61,29 @@ def _cards_for(task: str) -> list[dict[str, Any]]:
     return _store[task]
 
 
+def teacher_prior(task: str) -> str | None:
+    """Rules distilled from *other* tasks' rollouts, injected once per session.
+
+    These are prose with no machine-checkable precondition, so they cannot go
+    through `guard` (which needs a violation to fire on). They go in once at
+    turn 1: the cheapest placement, and the model restates what it uses in its
+    own analysis, which Harbor does keep in the history.
+    """
+    if task not in _teacher:
+        try:
+            _teacher[task] = json.loads((Path(TEACHER_DIR) / f"{task}.json").read_text())
+        except (OSError, json.JSONDecodeError):
+            _teacher[task] = []
+    rules = _teacher[task]
+    if not rules:
+        return None
+    lines = ["[operator note] Lessons from prior runs against this same "
+             "environment, on other tasks. They are observations about how "
+             "these tools behave, not instructions about your current task:"]
+    lines += [f"- {r['rule']}" for r in rules]
+    return "\n".join(lines)
+
+
 def build_note(session: dict[str, Any], messages: list[dict[str, Any]]) -> str | None:
     """Return text to append after the latest observation, or None.
 
@@ -69,6 +95,10 @@ def build_note(session: dict[str, Any], messages: list[dict[str, Any]]) -> str |
     the tokens naming its action (service, tool) are present in the task
     instruction or the recent transcript — i.e. when that tool is in play.
     """
+    if "teach" in os.environ.get("EVOLVE_ARM", ""):
+        # once per session, at the top of the run
+        return teacher_prior(session.get("task", "?")) if session.get("turn") == 1 else None
+
     cards = _cards_for(session.get("task", "?"))
     if not cards:
         return None

@@ -124,6 +124,85 @@ def build(task: str, job: str | None, level: str) -> tuple[str, dict[str, float]
     return PROMPT.format(n=len(blocks), traces="\n".join(blocks)), truth
 
 
+TASKS = ["ab-testing", "academic-warning", "flagged-transactions", "game-statistics",
+         "live-transactions", "price-comparison", "inventory-sync",
+         "woocommerce-update-cover", "filter-low-selling-products",
+         "woocommerce-stock-alert"]
+
+
+def distil_one(task: str, job: str, level: str) -> dict:
+    """One teacher call over one task's rollouts. No labels, no reward."""
+    import anthropic
+    prompt, truth = build(task, job, level)
+    client = anthropic.Anthropic(api_key=api_key())
+    with client.messages.stream(model=MODEL, max_tokens=32000,
+                                output_config={"effort": "high"},
+                                messages=[{"role": "user", "content": prompt}]) as st:
+        msg = st.get_final_message()
+    text = next((b.text for b in msg.content if b.type == "text"), "")
+    data = json.loads(text[text.find("{"):text.rfind("}") + 1])
+    data["_usage"] = {"in": msg.usage.input_tokens, "out": msg.usage.output_tokens}
+    data["_truth"] = truth          # for scoring the judge afterwards, never shown
+    return data
+
+
+def cmd_loto(job: str, level: str) -> int:
+    """Distil each task separately, then give each task the OTHER tasks' rules.
+
+    Leave-one-task-out: guidance injected into task T is derived only from
+    rollouts of the other nine, so an improvement cannot be T's own answer
+    handed back to it.
+    """
+    import concurrent.futures as cf
+
+    raw = Path("jobs/_teacher/raw")
+    raw.mkdir(parents=True, exist_ok=True)
+    todo = [t for t in TASKS if not (raw / f"{t}.json").exists()]
+    print(f"distilling {len(todo)} tasks ({len(TASKS) - len(todo)} cached)")
+    with cf.ThreadPoolExecutor(max_workers=5) as ex:
+        futs = {ex.submit(distil_one, t, job, level): t for t in todo}
+        for f in cf.as_completed(futs):
+            t = futs[f]
+            try:
+                d = f.result()
+            except Exception as e:                       # noqa: BLE001
+                print(f"  {t}: FAILED {e!r}")
+                continue
+            (raw / f"{t}.json").write_text(json.dumps(d, indent=1))
+            hits = sum(1 for v in d["verdicts"]
+                       if (v["verdict"] == "pass") == (d["_truth"].get(v["id"]) == 1.0))
+            print(f"  {t}: {len(d['guidance'])} rules, judge {hits}/{len(d['verdicts'])}, "
+                  f"${d['_usage']['in']*5e-6 + d['_usage']['out']*25e-6:.2f}")
+
+    out = Path("jobs/_teacher")
+    for task in TASKS:
+        rules, seen = [], set()
+        for other in TASKS:
+            if other == task:
+                continue
+            f = raw / f"{other}.json"
+            if not f.exists():
+                continue
+            d = json.loads(f.read_text())
+            for g in d.get("guidance", []):
+                # a rule is worth carrying only if breaking it actually cost a
+                # run; the teacher's own verdicts decide that, not the grader
+                verdicts = {v["id"]: v["verdict"] for v in d["verdicts"]}
+                viol = g.get("violated", [])
+                if viol and all(verdicts.get(i) == "pass" for i in viol):
+                    continue
+                key = g["rule"][:60].lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"rule": g["rule"], "kind": g.get("kind", "?"),
+                              "from": other, "n_violated": len(viol)})
+        rules.sort(key=lambda r: (r["kind"] != "discriminative", -r["n_violated"]))
+        (out / f"{task}.json").write_text(json.dumps(rules[:10], indent=1))
+        print(f"  -> {task}: {len(rules[:10])} rules from {len(TASKS)-1} other tasks")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print(__doc__)
@@ -131,6 +210,8 @@ def main(argv: list[str]) -> int:
     task = argv[1]
     job = argv[argv.index("--job") + 1] if "--job" in argv else None
     level = argv[argv.index("--level") + 1] if "--level" in argv else "L2"
+    if task == "loto":
+        return cmd_loto(job or "big-log", level)
 
     prompt, truth = build(task, job, level)
     print(f"# {task}: {len(truth)} attempts, prompt ~{len(prompt)//4:,} tokens",
