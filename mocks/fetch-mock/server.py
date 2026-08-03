@@ -114,6 +114,18 @@ def _strip_html(html: str) -> str:
 
 mcp = FastMCP("fetch-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 @mcp.tool(name="fetch_html",
           description="Fetch a website and return the content as raw HTML.")
@@ -177,7 +189,7 @@ def fetch_markdown(url: str, headers: dict | None = None) -> str:
     return _strip_html(p.get("html", ""))
 
 
-@mcp.tool(name="mock_debug_state",
+@_debug_tool(name="mock_debug_state",
           description="Mock-only: return the persisted state dict.")
 def mock_debug_state() -> dict:
     with _lock():

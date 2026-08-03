@@ -1372,6 +1372,18 @@ def _sosl_match(record: dict, term: str) -> bool:
 
 mcp = FastMCP("salesforce-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Query / search / describe
@@ -1892,7 +1904,7 @@ def get_limits() -> dict:
 # Mock-only debug helpers
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state."""
     with _lock():
@@ -1915,7 +1927,7 @@ def _seed(sobject_type: str, fields: dict,
         return new
 
 
-@mcp.tool(name="mock_debug_seed_account")
+@_debug_tool(name="mock_debug_seed_account")
 def mock_debug_seed_account(Name: str,
                               Industry: str | None = None,
                               Type: str | None = None,
@@ -1937,7 +1949,7 @@ def mock_debug_seed_account(Name: str,
     return _seed("Account", fields, record_id=Id)
 
 
-@mcp.tool(name="mock_debug_seed_contact")
+@_debug_tool(name="mock_debug_seed_contact")
 def mock_debug_seed_contact(LastName: str,
                               FirstName: str | None = None,
                               Email: str | None = None,
@@ -1954,7 +1966,7 @@ def mock_debug_seed_contact(LastName: str,
     return _seed("Contact", fields, record_id=Id)
 
 
-@mcp.tool(name="mock_debug_seed_lead")
+@_debug_tool(name="mock_debug_seed_lead")
 def mock_debug_seed_lead(LastName: str, Company: str,
                            FirstName: str | None = None,
                            Email: str | None = None,
@@ -1973,7 +1985,7 @@ def mock_debug_seed_lead(LastName: str, Company: str,
     return _seed("Lead", fields, record_id=Id)
 
 
-@mcp.tool(name="mock_debug_seed_opportunity")
+@_debug_tool(name="mock_debug_seed_opportunity")
 def mock_debug_seed_opportunity(Name: str, StageName: str, CloseDate: str,
                                   AccountId: str | None = None,
                                   Amount: float | None = None,
@@ -1992,7 +2004,7 @@ def mock_debug_seed_opportunity(Name: str, StageName: str, CloseDate: str,
     return _seed("Opportunity", fields, record_id=Id)
 
 
-@mcp.tool(name="mock_debug_seed_case")
+@_debug_tool(name="mock_debug_seed_case")
 def mock_debug_seed_case(Subject: str,
                            Status: str | None = None,
                            Priority: str | None = None,

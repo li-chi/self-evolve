@@ -564,6 +564,18 @@ def _parse_order(order: str | None) -> str:
 
 mcp = FastMCP("supabase-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 def _new_project(*, name: str, organization_id: str, region: str,
                  db_password: str, status: str = "ACTIVE_HEALTHY",
@@ -1877,7 +1889,7 @@ def get_logs(projectRef: str, service: str = "api",
 # Mock-only debug tools
 # ===========================================================================
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state JSON for verifier
     introspection. Not part of the upstream Supabase API."""
@@ -1885,7 +1897,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_project")
+@_debug_tool(name="mock_debug_seed_project")
 def mock_debug_seed_project(ref: str | None = None,
                             name: str = "Mock Project",
                             organization_id: str | None = None,
@@ -1921,7 +1933,7 @@ def mock_debug_seed_project(ref: str | None = None,
         return _public_project(proj)
 
 
-@mcp.tool(name="mock_debug_seed_organization")
+@_debug_tool(name="mock_debug_seed_organization")
 def mock_debug_seed_organization(id: str | None = None,
                                  name: str = "Mock Org",
                                  slug: str | None = None) -> dict:
@@ -1939,7 +1951,7 @@ def mock_debug_seed_organization(id: str | None = None,
         return s["organizations"][oid]
 
 
-@mcp.tool(name="mock_debug_seed_table")
+@_debug_tool(name="mock_debug_seed_table")
 def mock_debug_seed_table(projectRef: str,
                           table: str,
                           columns: list[dict],
@@ -1967,7 +1979,7 @@ def mock_debug_seed_table(projectRef: str,
                 "table": table, "columns": len(cols)}
 
 
-@mcp.tool(name="mock_debug_seed_rows")
+@_debug_tool(name="mock_debug_seed_rows")
 def mock_debug_seed_rows(projectRef: str, table: str,
                          rows: list[dict],
                          schema: str = "public") -> dict:
@@ -2006,7 +2018,7 @@ def mock_debug_seed_rows(projectRef: str, table: str,
         return {"inserted": n}
 
 
-@mcp.tool(name="mock_debug_seed_user")
+@_debug_tool(name="mock_debug_seed_user")
 def mock_debug_seed_user(projectRef: str,
                          email: str,
                          id: str | None = None,
@@ -2030,7 +2042,7 @@ def mock_debug_seed_user(projectRef: str,
         return user
 
 
-@mcp.tool(name="mock_debug_seed_bucket")
+@_debug_tool(name="mock_debug_seed_bucket")
 def mock_debug_seed_bucket(projectRef: str, name: str,
                            public: bool = False,
                            file_size_limit: int | None = None,
@@ -2061,7 +2073,7 @@ def mock_debug_seed_bucket(projectRef: str, name: str,
         return _public_bucket(buckets[name])
 
 
-@mcp.tool(name="mock_debug_seed_object")
+@_debug_tool(name="mock_debug_seed_object")
 def mock_debug_seed_object(projectRef: str, bucket: str, path: str,
                            content: str = "",
                            content_type: str = "application/octet-stream"
@@ -2100,7 +2112,7 @@ def mock_debug_seed_object(projectRef: str, bucket: str, path: str,
         return {"id": obj_id, "name": path, "bucket": bucket}
 
 
-@mcp.tool(name="mock_debug_seed_function")
+@_debug_tool(name="mock_debug_seed_function")
 def mock_debug_seed_function(projectRef: str, slug: str,
                              name: str,
                              body: str = "",

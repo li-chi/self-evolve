@@ -341,6 +341,18 @@ def _commands_scope_key(scope: dict | None, language_code: str | None) -> str:
 
 mcp = FastMCP("telegram-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Bot identity / Updates
@@ -1481,7 +1493,7 @@ def get_webhook_info() -> dict:
 # Mock-only helpers
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state (for verifier
     introspection). Not exposed by the real Telegram Bot API."""
@@ -1489,7 +1501,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed")
+@_debug_tool(name="mock_debug_seed")
 def mock_debug_seed(self_user: dict | None = None,
                     users: list | None = None,
                     chats: list | None = None,

@@ -292,6 +292,18 @@ def _patch_event(ev: dict, body: dict) -> dict:
 
 mcp = FastMCP("google-calendar-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Tool surface (mirrors @gongrzhe/server-calendar-autoauth-mcp v1.0.2)
@@ -495,7 +507,7 @@ def list_events(timeMin: str,
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state.
 
@@ -506,7 +518,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_set_user")
+@_debug_tool(name="mock_debug_set_user")
 def mock_debug_set_user(email: str, name: str | None = None,
                         timeZone: str | None = None) -> dict:
     """Mock-only: set the authenticated user's email/name and the
@@ -527,7 +539,7 @@ def mock_debug_set_user(email: str, name: str | None = None,
         return {"user": s["user"], "primary": cal}
 
 
-@mcp.tool(name="mock_debug_seed_event")
+@_debug_tool(name="mock_debug_seed_event")
 def mock_debug_seed_event(event: dict,
                           calendarId: str = PRIMARY) -> dict:
     """Mock-only: insert a fully-formed event resource.

@@ -325,6 +325,18 @@ def _detect_repo_type(state: dict, repo_id: str) -> str | None:
 
 mcp = FastMCP("huggingface-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # create_repo  (POST /api/repos/create)
@@ -1488,7 +1500,7 @@ def _new_job(s: dict, args: dict, *, kind: str) -> str:
 # Mock-only debug tools (not exposed by the real HF MCP)
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state dict (users, repos, files,
     call log). Used by verifiers / test harness — not exposed by the
@@ -1497,7 +1509,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_repo")
+@_debug_tool(name="mock_debug_seed_repo")
 def mock_debug_seed_repo(repo_type: str, repo_id: str,
                          data: dict | None = None) -> dict:
     """Mock-only: insert or overwrite a repo (model/dataset/space) with
@@ -1521,7 +1533,7 @@ def mock_debug_seed_repo(repo_type: str, repo_id: str,
         return repo
 
 
-@mcp.tool(name="mock_debug_upload_file")
+@_debug_tool(name="mock_debug_upload_file")
 def mock_debug_upload_file(repo_type: str, repo_id: str, path: str,
                            content_b64: str) -> dict:
     """Mock-only: write a file blob into a repo's file tree. The real
@@ -1566,7 +1578,7 @@ def mock_debug_upload_file(repo_type: str, repo_id: str, path: str,
         return {"ok": True, "path": path, "size": size, "sha": sha}
 
 
-@mcp.tool(name="mock_debug_set_user")
+@_debug_tool(name="mock_debug_set_user")
 def mock_debug_set_user(name: str, fullname: str | None = None,
                         email: str | None = None) -> dict:
     """Mock-only: override the authenticated mock user identity."""

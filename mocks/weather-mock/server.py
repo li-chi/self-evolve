@@ -116,6 +116,18 @@ def _find_point(state: dict, lat: float, lon: float) -> dict | None:
 
 mcp = FastMCP("weather-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 @mcp.tool(
     name="get_current_weather",
@@ -180,7 +192,7 @@ def get_alerts(state: str) -> dict:
     return {"state": code, "alerts": alerts}
 
 
-@mcp.tool(name="mock_debug_state",
+@_debug_tool(name="mock_debug_state",
           description="Mock-only: return the persisted state dict.")
 def mock_debug_state() -> dict:
     with _lock():

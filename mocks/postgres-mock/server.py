@@ -1210,6 +1210,18 @@ def _infer_pg_type(v: Any) -> str:
 
 mcp = FastMCP("postgres-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 def _current_db(state: dict) -> str:
     return state.get("current_database") or "postgres"
@@ -1550,7 +1562,7 @@ def current_settings() -> dict:
 # Mock-only debug tools
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted catalog (databases / schemas /
     tables / views / functions) and the call log. Used by verifiers."""
@@ -1558,7 +1570,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_database")
+@_debug_tool(name="mock_debug_seed_database")
 def mock_debug_seed_database(name: str) -> dict:
     """Mock-only: create a database (with an empty `public` schema)."""
     with _lock():
@@ -1574,7 +1586,7 @@ def mock_debug_seed_database(name: str) -> dict:
                 "schemas": list(s["databases"][name]["schemas"].keys())}
 
 
-@mcp.tool(name="mock_debug_seed_table")
+@_debug_tool(name="mock_debug_seed_table")
 def mock_debug_seed_table(database: str, schema: str, table: str,
                           columns: list[dict],
                           primary_key: list[str] | None = None,
@@ -1651,7 +1663,7 @@ def mock_debug_seed_table(database: str, schema: str, table: str,
                 "columns": len(normalized)}
 
 
-@mcp.tool(name="mock_debug_seed_rows")
+@_debug_tool(name="mock_debug_seed_rows")
 def mock_debug_seed_rows(database: str, schema: str, table: str,
                          rows: list[dict]) -> dict:
     """Mock-only: bulk-insert rows into a previously-seeded table.
@@ -1688,7 +1700,7 @@ def mock_debug_seed_rows(database: str, schema: str, table: str,
         return {"inserted": n}
 
 
-@mcp.tool(name="mock_debug_reset")
+@_debug_tool(name="mock_debug_reset")
 def mock_debug_reset() -> dict:
     """Mock-only: wipe the catalog AND the sqlite db. Used between
     tasks/tests."""

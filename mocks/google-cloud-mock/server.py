@@ -322,6 +322,18 @@ def _rewrite_query(query: str, state: dict) -> tuple[str, list[str]]:
 
 mcp = FastMCP("google-cloud-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ===========================================================================
 # BigQuery tools
@@ -1637,14 +1649,14 @@ def compute_wait_for_operation(operation_name: str, zone: str,
 # Mock-only debug tools (not exposed by the real google-cloud-mcp)
 # ===========================================================================
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state dict (no SQLite contents)."""
     with _lock():
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_bucket_object")
+@_debug_tool(name="mock_debug_seed_bucket_object")
 def mock_debug_seed_bucket_object(bucket_name: str, object_name: str,
                                   content_b64: str | None = None,
                                   text: str | None = None,
@@ -1674,7 +1686,7 @@ def mock_debug_seed_bucket_object(bucket_name: str, object_name: str,
                 "size": size}
 
 
-@mcp.tool(name="mock_debug_seed_dataset")
+@_debug_tool(name="mock_debug_seed_dataset")
 def mock_debug_seed_dataset(dataset_id: str, location: str = "US",
                             description: str = "") -> dict:
     """Mock-only: create a dataset bypassing the allowlist."""
@@ -1689,7 +1701,7 @@ def mock_debug_seed_dataset(dataset_id: str, location: str = "US",
         return {"ok": True, "dataset_id": dataset_id}
 
 
-@mcp.tool(name="mock_debug_seed_table")
+@_debug_tool(name="mock_debug_seed_table")
 def mock_debug_seed_table(dataset_id: str, table_id: str,
                           schema: list, rows: list | None = None) -> dict:
     """Mock-only: create a BQ table with schema (and optional rows)
@@ -1727,7 +1739,7 @@ def mock_debug_seed_table(dataset_id: str, table_id: str,
                 "table_id": table_id, "num_rows": n}
 
 
-@mcp.tool(name="mock_debug_seed_log_bucket")
+@_debug_tool(name="mock_debug_seed_log_bucket")
 def mock_debug_seed_log_bucket(bucket_id: str, location: str = "global",
                                retention_days: int = 30) -> dict:
     """Mock-only: create a log bucket bypassing the allowlist."""

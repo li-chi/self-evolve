@@ -115,6 +115,18 @@ def _meta(entry: dict) -> dict:
 
 mcp = FastMCP("arxiv-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 # Free-text search is a RANKING over a corpus — its result varies with query
 # phrasing (token/Token/tokens), which is not reconstructable under recompute
 # verification. It is therefore OFF by default (exact get-by-id is the fair,
@@ -224,7 +236,7 @@ def read_paper(paper_id: str) -> dict:
         return {"status": "success", "paper_id": paper_id, "content": content}
 
 
-@mcp.tool(name="mock_debug_state",
+@_debug_tool(name="mock_debug_state",
           description="Mock-only: return the persisted state dict.")
 def mock_debug_state() -> dict:
     with _lock():

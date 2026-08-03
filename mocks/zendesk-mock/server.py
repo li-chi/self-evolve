@@ -755,6 +755,18 @@ def _apply_macro_actions(state: dict, ticket: dict, macro: dict,
 
 mcp = FastMCP("zendesk-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ===========================================================================
 # Tickets
@@ -1812,7 +1824,7 @@ def count_tickets_in_view(viewId: int) -> dict:
 # Mock-only debug tools
 # ===========================================================================
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state (for verifier
     introspection). Not part of the real Zendesk surface."""
@@ -1820,7 +1832,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_ticket")
+@_debug_tool(name="mock_debug_seed_ticket")
 def mock_debug_seed_ticket(subject: str,
                            description: str = "",
                            id: int | None = None,
@@ -1883,7 +1895,7 @@ def mock_debug_seed_ticket(subject: str,
         return t
 
 
-@mcp.tool(name="mock_debug_seed_user")
+@_debug_tool(name="mock_debug_seed_user")
 def mock_debug_seed_user(name: str,
                          email: str | None = None,
                          id: int | None = None,
@@ -1945,7 +1957,7 @@ def mock_debug_seed_user(name: str,
         return u
 
 
-@mcp.tool(name="mock_debug_seed_organization")
+@_debug_tool(name="mock_debug_seed_organization")
 def mock_debug_seed_organization(name: str,
                                  id: int | None = None,
                                  domain_names: list[str] | None = None,
@@ -1982,7 +1994,7 @@ def mock_debug_seed_organization(name: str,
         return org
 
 
-@mcp.tool(name="mock_debug_seed_group")
+@_debug_tool(name="mock_debug_seed_group")
 def mock_debug_seed_group(name: str,
                           id: int | None = None,
                           description: str = "",
@@ -2010,7 +2022,7 @@ def mock_debug_seed_group(name: str,
         return g
 
 
-@mcp.tool(name="mock_debug_seed_macro")
+@_debug_tool(name="mock_debug_seed_macro")
 def mock_debug_seed_macro(title: str,
                           actions: list[dict],
                           id: int | None = None,
@@ -2046,7 +2058,7 @@ def mock_debug_seed_macro(title: str,
         return m
 
 
-@mcp.tool(name="mock_debug_seed_view")
+@_debug_tool(name="mock_debug_seed_view")
 def mock_debug_seed_view(title: str,
                          conditions: dict | None = None,
                          id: int | None = None,

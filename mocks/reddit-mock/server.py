@@ -765,6 +765,18 @@ def _post_matches_search(post: dict, terms: list[str],
 
 mcp = FastMCP("reddit-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Subreddits
@@ -1738,7 +1750,7 @@ def remove(id: str, spam: bool = False) -> dict:  # noqa: A002
 # Mock-only debug helpers
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state for verifier
     introspection. Not part of the Reddit API."""
@@ -1746,7 +1758,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_subreddit")
+@_debug_tool(name="mock_debug_seed_subreddit")
 def mock_debug_seed_subreddit(display_name: str,
                               title: str | None = None,
                               public_description: str = "",
@@ -1772,7 +1784,7 @@ def mock_debug_seed_subreddit(display_name: str,
         return _wrap("t5", sr)
 
 
-@mcp.tool(name="mock_debug_seed_user")
+@_debug_tool(name="mock_debug_seed_user")
 def mock_debug_seed_user(name: str,
                          link_karma: int = 0,
                          comment_karma: int = 0,
@@ -1792,7 +1804,7 @@ def mock_debug_seed_user(name: str,
         return _wrap("t2", u)
 
 
-@mcp.tool(name="mock_debug_seed_post")
+@_debug_tool(name="mock_debug_seed_post")
 def mock_debug_seed_post(subreddit: str,
                          author: str,
                          title: str,
@@ -1828,7 +1840,7 @@ def mock_debug_seed_post(subreddit: str,
         return _wrap("t3", post)
 
 
-@mcp.tool(name="mock_debug_seed_comment")
+@_debug_tool(name="mock_debug_seed_comment")
 def mock_debug_seed_comment(link_id: str,
                             parent_id: str,
                             author: str,
@@ -1861,7 +1873,7 @@ def mock_debug_seed_comment(link_id: str,
         return _wrap("t1", c)
 
 
-@mcp.tool(name="mock_debug_seed_message")
+@_debug_tool(name="mock_debug_seed_message")
 def mock_debug_seed_message(author: str,
                             dest: str,
                             subject: str,
@@ -1887,7 +1899,7 @@ def mock_debug_seed_message(author: str,
         return _wrap("t4", m)
 
 
-@mcp.tool(name="mock_debug_seed_subscription")
+@_debug_tool(name="mock_debug_seed_subscription")
 def mock_debug_seed_subscription(user: str, subreddit: str) -> dict:
     """Mock-only: register a subscription edge directly, bypassing
     `subscribe_subreddit` (no subscriber-count adjustment)."""
@@ -1906,7 +1918,7 @@ def mock_debug_seed_subscription(user: str, subreddit: str) -> dict:
         return {"ok": True, "user": user, "subreddit": name}
 
 
-@mcp.tool(name="mock_debug_set_self_user")
+@_debug_tool(name="mock_debug_set_self_user")
 def mock_debug_set_self_user(username: str) -> dict:
     """Mock-only: change the username the mock treats as the
     authenticated session. Used by per-task seeders to align the

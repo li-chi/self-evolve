@@ -562,6 +562,18 @@ def _paginate(items: list, limit: int | None,
 
 mcp = FastMCP("asana-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ===========================================================================
 # Workspaces
@@ -1672,7 +1684,7 @@ def list_custom_fields(workspaceGid: str,
 # Mock-only debug helpers
 # ===========================================================================
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state. Not part of the
     real Asana surface."""
@@ -1680,7 +1692,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_workspace")
+@_debug_tool(name="mock_debug_seed_workspace")
 def mock_debug_seed_workspace(gid: str | None = None,
                               name: str = "Mock Workspace",
                               is_organization: bool = True,
@@ -1706,7 +1718,7 @@ def mock_debug_seed_workspace(gid: str | None = None,
         return {"data": _workspace_view(s, wgid)}
 
 
-@mcp.tool(name="mock_debug_seed_user")
+@_debug_tool(name="mock_debug_seed_user")
 def mock_debug_seed_user(gid: str | None = None,
                          name: str = "Mock User",
                          email: str | None = None,
@@ -1728,7 +1740,7 @@ def mock_debug_seed_user(gid: str | None = None,
         return {"data": _user_view(s, ugid)}
 
 
-@mcp.tool(name="mock_debug_seed_project")
+@_debug_tool(name="mock_debug_seed_project")
 def mock_debug_seed_project(gid: str | None = None,
                             name: str = "Mock Project",
                             workspace_gid: str | None = None,
@@ -1788,7 +1800,7 @@ def mock_debug_seed_project(gid: str | None = None,
         return {"data": _project_view(s, pgid)}
 
 
-@mcp.tool(name="mock_debug_seed_section")
+@_debug_tool(name="mock_debug_seed_section")
 def mock_debug_seed_section(gid: str | None = None,
                             name: str = "New Section",
                             project_gid: str = "") -> dict:
@@ -1815,7 +1827,7 @@ def mock_debug_seed_section(gid: str | None = None,
         return {"data": _section_view(s, sgid)}
 
 
-@mcp.tool(name="mock_debug_seed_task")
+@_debug_tool(name="mock_debug_seed_task")
 def mock_debug_seed_task(gid: str | None = None,
                          name: str = "Mock Task",
                          notes: str = "",
@@ -1893,7 +1905,7 @@ def mock_debug_seed_task(gid: str | None = None,
         return {"data": _task_view(s, tgid)}
 
 
-@mcp.tool(name="mock_debug_seed_tag")
+@_debug_tool(name="mock_debug_seed_tag")
 def mock_debug_seed_tag(gid: str | None = None,
                         name: str = "Mock Tag",
                         workspace_gid: str | None = None,

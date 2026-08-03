@@ -986,6 +986,18 @@ def _ejson(doc: Any) -> str:
 
 mcp = FastMCP("mongodb-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 @mcp.tool(name="connect")
 def tool_connect(connectionString: str | None = None) -> dict:
@@ -1528,7 +1540,7 @@ def tool_mongodb_logs(type: str = "global", limit: int = 50) -> dict:
 # Debug helpers (not part of the upstream surface)
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state. Not exposed by the real
     MongoDB server; use for inspection/verification."""
@@ -1536,7 +1548,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed")
+@_debug_tool(name="mock_debug_seed")
 def mock_debug_seed(database: str, collection: str,
                     documents: list[dict]) -> dict:
     """Mock-only: bulk-insert documents into a collection bypassing

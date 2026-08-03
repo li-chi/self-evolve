@@ -355,6 +355,18 @@ def _paginate_messages(msgs: list[dict], *,
 
 mcp = FastMCP("discord-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Guilds
@@ -1193,7 +1205,7 @@ def create_dm(recipient_id: str) -> dict:
 # Mock-only debug helpers (not part of the real surface)
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state (verifier
     introspection). Not in the real Discord API."""
@@ -1201,7 +1213,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_user")
+@_debug_tool(name="mock_debug_seed_user")
 def mock_debug_seed_user(id: str | None = None,
                          username: str = "user",
                          global_name: str | None = None,
@@ -1231,7 +1243,7 @@ def mock_debug_seed_user(id: str | None = None,
         return u
 
 
-@mcp.tool(name="mock_debug_seed_guild")
+@_debug_tool(name="mock_debug_seed_guild")
 def mock_debug_seed_guild(id: str | None = None,
                           name: str = "Mock Guild",
                           owner_id: str | None = None) -> dict:
@@ -1266,7 +1278,7 @@ def mock_debug_seed_guild(id: str | None = None,
         return g
 
 
-@mcp.tool(name="mock_debug_seed_channel")
+@_debug_tool(name="mock_debug_seed_channel")
 def mock_debug_seed_channel(guild_id: str | None = None,
                             id: str | None = None,
                             name: str = "general",
@@ -1300,7 +1312,7 @@ def mock_debug_seed_channel(guild_id: str | None = None,
         return ch
 
 
-@mcp.tool(name="mock_debug_seed_role")
+@_debug_tool(name="mock_debug_seed_role")
 def mock_debug_seed_role(guild_id: str,
                          id: str | None = None,
                          name: str = "role",
@@ -1329,7 +1341,7 @@ def mock_debug_seed_role(guild_id: str,
         return _public_role(role)
 
 
-@mcp.tool(name="mock_debug_seed_member")
+@_debug_tool(name="mock_debug_seed_member")
 def mock_debug_seed_member(guild_id: str, user_id: str,
                            nick: str | None = None,
                            roles: list[str] | None = None,
@@ -1361,7 +1373,7 @@ def mock_debug_seed_member(guild_id: str, user_id: str,
         return _public_member(s, member)
 
 
-@mcp.tool(name="mock_debug_seed_message")
+@_debug_tool(name="mock_debug_seed_message")
 def mock_debug_seed_message(channel_id: str,
                             author_id: str | None = None,
                             content: str = "",

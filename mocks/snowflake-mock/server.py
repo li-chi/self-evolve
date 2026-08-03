@@ -757,6 +757,18 @@ def _contains_write(query: str) -> bool:
 
 mcp = FastMCP("snowflake-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 def _maybe_check_access_from_query(query: str) -> None:
     if CONFIG["allowed_databases"] is None:
@@ -1217,7 +1229,7 @@ def list_insights() -> str:
 # Debug tools (not present on the upstream server)
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state (catalog, insights,
     config flags, call log). Used by per-task verifiers and tests."""
@@ -1225,7 +1237,7 @@ def mock_debug_state() -> dict:
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_exec")
+@_debug_tool(name="mock_debug_exec")
 def mock_debug_exec(query: str) -> dict:
     """Mock-only: run a raw sqlite query against the backing database
     (bypassing the Snowflake-to-sqlite rewriter and the write-detector).

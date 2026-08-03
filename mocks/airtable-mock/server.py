@@ -305,6 +305,18 @@ def _table_meta(tbl: dict) -> dict:
 
 mcp = FastMCP("airtable-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Meta — bases and tables
@@ -681,14 +693,14 @@ def search_records(base_id: str, table_name: str,
 # Debug helpers (mock-only)
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the persisted state. Not in the upstream server."""
     with _lock():
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_base")
+@_debug_tool(name="mock_debug_seed_base")
 def mock_debug_seed_base(base: dict) -> dict:
     """Mock-only: insert a fully-formed base object into state, bypassing
     validation. Used by per-task preprocessing to seed fixtures.

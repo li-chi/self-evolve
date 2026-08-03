@@ -777,6 +777,18 @@ def _paginate(items: list, cursor: str | None, limit: int) -> tuple[list, dict]:
 
 mcp = FastMCP("sentry-mock")
 
+# Fixture tools are for the harness, not the agent. `mock_debug_seed_*` writes
+# rows "bypassing the allowlist" — including straight into a table a grader
+# reads — and `mock_debug_state` dumps state the agent is supposed to discover
+# through the API. Registered only when MOCK_DEBUG_TOOLS is set, so by default
+# they are neither listed nor callable over MCP.
+_DEBUG_TOOLS = os.environ.get("MOCK_DEBUG_TOOLS", "").lower() not in ("", "0", "false", "no")
+
+
+def _debug_tool(*a, **kw):
+    return mcp.tool(*a, **kw) if _DEBUG_TOOLS else (lambda fn: fn)
+
+
 
 # ---------------------------------------------------------------------------
 # Organizations
@@ -1709,14 +1721,14 @@ def create_issue(organizationSlug: str, projectSlug: str, title: str,
 # Mock-only debug helpers
 # ---------------------------------------------------------------------------
 
-@mcp.tool(name="mock_debug_state")
+@_debug_tool(name="mock_debug_state")
 def mock_debug_state() -> dict:
     """Mock-only: return the full persisted state."""
     with _lock():
         return _load_state()
 
 
-@mcp.tool(name="mock_debug_seed_organization")
+@_debug_tool(name="mock_debug_seed_organization")
 def mock_debug_seed_organization(slug: str, name: str | None = None,
                                  features: list | None = None) -> dict:
     """Mock-only: insert (or upsert) an organization."""
@@ -1742,7 +1754,7 @@ def mock_debug_seed_organization(slug: str, name: str | None = None,
         return _public_org(org)
 
 
-@mcp.tool(name="mock_debug_seed_team")
+@_debug_tool(name="mock_debug_seed_team")
 def mock_debug_seed_team(organizationSlug: str, slug: str,
                          name: str | None = None) -> dict:
     """Mock-only: insert (or upsert) a team under an organization."""
@@ -1773,7 +1785,7 @@ def mock_debug_seed_team(organizationSlug: str, slug: str,
         return _public_team(s, team)
 
 
-@mcp.tool(name="mock_debug_seed_project")
+@_debug_tool(name="mock_debug_seed_project")
 def mock_debug_seed_project(organizationSlug: str, slug: str,
                             name: str | None = None,
                             platform: str = "python",
@@ -1816,7 +1828,7 @@ def mock_debug_seed_project(organizationSlug: str, slug: str,
         return _public_project(s, project)
 
 
-@mcp.tool(name="mock_debug_seed_issue")
+@_debug_tool(name="mock_debug_seed_issue")
 def mock_debug_seed_issue(organizationSlug: str, projectSlug: str,
                           title: str,
                           culprit: str | None = None,
@@ -1889,7 +1901,7 @@ def mock_debug_seed_issue(organizationSlug: str, projectSlug: str,
         return _public_issue(s, iss)
 
 
-@mcp.tool(name="mock_debug_seed_event")
+@_debug_tool(name="mock_debug_seed_event")
 def mock_debug_seed_event(organizationSlug: str, projectSlug: str,
                           issueId: str,
                           message: str,
@@ -1959,7 +1971,7 @@ def mock_debug_seed_event(organizationSlug: str, projectSlug: str,
         return _public_event(s, ev)
 
 
-@mcp.tool(name="mock_debug_seed_release")
+@_debug_tool(name="mock_debug_seed_release")
 def mock_debug_seed_release(organizationSlug: str, version: str,
                             projects: list | None = None,
                             dateReleased: str | None = None,
